@@ -1,0 +1,6 @@
+client/fake_kw_home/
+data/*.db
+data/*.db-shm
+data/*.db-wal
+data/probe
+__pycache__/

@@ -1,0 +1,61 @@
+%!TeX root=../main.tex
+% Figura 2.4: parte do esquema do banco do kworkflow usada neste trabalho.
+% Desenhada a partir de database/kwdb.sql (commit 2d8a04b). Mostra as tabelas
+% do registro de execuções e a view statistics_report, que é a porta de
+% entrada (gatilho INSTEAD OF INSERT) e de saída (kw report) desses dados.
+% As tabelas do cronômetro de foco (timebox, tag) aparecem só pelo nome.
+\begin{tikzpicture}[
+    x=1cm, y=1cm,
+    every node/.style={font=\footnotesize},
+    tabela/.style={draw, rectangle split, rectangle split parts=2,
+                   rectangle split part fill={black!12, white},
+                   inner sep=3pt, font=\footnotesize},
+    fora/.style={draw, dashed, text=black!55, draw=black!40,
+                 inner sep=3pt, font=\footnotesize\ttfamily},
+    visao/.style={draw, very thick, rounded corners=4pt, fill=black!4,
+                  inner sep=4pt, align=center, font=\footnotesize},
+    fk/.style={-{Latex[length=1.6mm]}, semithick},
+    liga/.style={semithick, dashed},
+  ]
+  % Colunas: nome em \texttt à esquerda, tipo ou chave à direita
+  \providecommand{\kwcolunas}{}\renewcommand{\kwcolunas}[1]{%
+    \begin{tabular}{@{}l@{\hspace{1.2em}}r@{}}#1\end{tabular}}
+  \providecommand{\kwcol}{}\renewcommand{\kwcol}[2]{\texttt{#1} & {\scriptsize #2}\\}
+
+  \node[tabela] (event) at (0, 0) {%
+    \texttt{event}
+    \nodepart{two}
+    \kwcolunas{\kwcol{id}{PK}\kwcol{date}{TEXT}\kwcol{time}{TEXT}}};
+
+  \node[tabela] (executed) at (5.1, 0) {%
+    \texttt{executed}
+    \nodepart{two}
+    \kwcolunas{\kwcol{id}{PK, FK}\kwcol{command\_label\_id}{FK}\kwcol{status\_id}{FK}%
+             \kwcol{elapsed\_time\_in\_secs}{INTEGER}}};
+
+  \node[tabela] (label) at (9.8, 0.8) {%
+    \texttt{command\_label}
+    \nodepart{two}
+    \kwcolunas{\kwcol{id}{PK}\kwcol{name}{TEXT}}};
+
+  \node[tabela] (status) at (9.8, -0.95) {%
+    \texttt{status}
+    \nodepart{two}
+    \kwcolunas{\kwcol{id}{PK}\kwcol{name}{TEXT}}};
+
+  \node[fora] (timebox) at (0, -2.1) {timebox, tag};
+
+  % Chaves estrangeiras
+  \draw[fk] (executed.west) -- node[above, font=\scriptsize] {mesmo \texttt{id}} (event.east);
+  \draw[fk] ([yshift=1.5mm]executed.east) -- (label.west);
+  \draw[fk] ([yshift=-2.5mm]executed.east) -- (status.west);
+  \draw[fk, draw=black!40] (timebox.north) -- (event.south);
+
+  % A view por cima
+  \node[visao] (view) at (5.1, 2.6) {%
+    view \texttt{statistics\_report}\\[1pt]
+    {\ttfamily id, label\_name, status, date, time, elapsed\_time\_in\_secs}};
+  \draw[liga] ([xshift=4mm]view.south west) -- (event.north);
+  \draw[liga] (view.south) -- (executed.north);
+  \draw[liga] ([xshift=-4mm]view.south east) -- (label.north);
+\end{tikzpicture}

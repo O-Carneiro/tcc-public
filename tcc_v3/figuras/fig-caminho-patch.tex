@@ -1,0 +1,73 @@
+%!TeX root=../main.tex
+% Figura 2.1: caminho de um patch até a mainline.
+% Adaptada de Kroah-Hartman (2018), images/kernel_patch_process.svg em
+% github.com/gregkh/kernel-development, CC BY-SA 4.0. Mantém a disposição e
+% as arestas do original; acrescenta a faixa da interface
+% contribuidor-mantenedor e traduz os rótulos.
+\begin{tikzpicture}[
+    x=1cm, y=1cm,
+    every node/.style={font=\footnotesize, align=center},
+    no/.style={draw, rounded corners=4pt, minimum width=2.1cm,
+               minimum height=0.8cm, inner sep=2pt},
+    topo/.style={no, fill=black!12},
+    subs/.style={no, fill=black!6},
+    mant/.style={no, fill=white},
+    dev/.style={no, fill=white, minimum width=1.6cm, dashed, font=\scriptsize},
+    seta/.style={-{Latex[length=1.6mm]}, semithick},
+  ]
+  % Topo
+  \node[topo] (next)   at (5.4, 6.1) {árvore \texttt{-next}};
+  \node[topo] (linus)  at (2.6, 5.0) {Linus Torvalds\\(mainline)};
+  \node[topo] (morton) at (8.2, 5.0) {Andrew Morton};
+
+  % Mantenedores de subsistema
+  \node[subs] (s1) at (1.9, 3.5) {mantenedor de\\subsistema};
+  \node[subs] (s2) at (4.6, 3.5) {mantenedor de\\subsistema};
+  \node[subs] (s3) at (7.3, 3.5) {mantenedor de\\subsistema};
+
+  % Mantenedores de driver ou arquivo
+  \node[mant] (m1) at (0.9, 2.0) {mantenedor de\\driver/arquivo};
+  \node[mant] (m2) at (3.6, 2.0) {mantenedor de\\driver/arquivo};
+  \node[mant] (m3) at (6.3, 2.0) {mantenedor de\\driver/arquivo};
+  \node[mant] (m4) at (9.0, 2.0) {mantenedor de\\driver/arquivo};
+
+  % Desenvolvedores
+  \foreach \i/\x in {1/0.0, 2/1.9, 3/3.8, 4/5.7, 5/7.6, 6/9.5} {
+    \node[dev] (d\i) at (\x, 0) {desenvolvedor};
+  }
+
+  % Faixa da interface contribuidor-mantenedor (acréscimo desta adaptação)
+  \draw[thick, dashed, rounded corners=6pt]
+    (-1.0, 0.62) rectangle (10.5, 1.18);
+
+  % Desenvolvedor -> primeiro mantenedor
+  \draw[seta] (d1) -- (m1);
+  \draw[seta] (d2) -- (m1);
+  \draw[seta] (d2) -- (m2);
+  \draw[seta] (d4) -- (m3);
+  \draw[seta] ([xshift=3mm]d4.north) -- (7.65, 2.0) -- ([xshift=2mm]s3.south);
+  \draw[seta] (d3) -- (m3);
+  \draw[seta] (d5) -- (m4);
+  \draw[seta] (d6.north) to[out=90, in=-90] ([xshift=0.35cm]m4.east) to[out=90, in=-55] (morton);
+
+  % Mantenedor de driver/arquivo -> subsistema
+  \draw[seta] (m1) -- (s1);
+  \draw[seta] (m2) -- (s1);
+  \draw[seta] (m3) -- (s2);
+  \draw[seta] (m4) -- (morton);
+
+  % Subsistema -> Linus e -next
+  \draw[seta] (s1) -- (linus);
+  \draw[seta] (s2) -- (linus);
+  \draw[seta] (s3) -- (linus);
+  \draw[seta] (s1) -- (next);
+  \draw[seta] (s2) -- (next);
+  \draw[seta] (s3) -- (next);
+
+  % Andrew Morton -> Linus e -next
+  \draw[seta] (morton) -- (linus);
+  \draw[seta] (morton) -- (next);
+  % Rótulo da faixa por cima das setas
+  \node[font=\footnotesize\itshape, fill=white, inner sep=1.5pt]
+    at (4.75, 0.9) {interface contribuidor--mantenedor};
+\end{tikzpicture}

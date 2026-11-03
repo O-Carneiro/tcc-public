@@ -1,0 +1,27 @@
+services:
+  collector:
+    image: otel/opentelemetry-collector:0.121.0
+    container_name: kwotel-collector
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./collector/config.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "4318:4318"
+    depends_on:
+      sink:
+        condition: service_healthy
+
+  sink:
+    build: ./sink
+    container_name: kwotel-sink
+    environment:
+      SINK_DB_PATH: /data/telemetry.db
+    volumes:
+      - ./data:/data
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8000/healthz')"]
+      interval: 2s
+      timeout: 2s
+      retries: 15

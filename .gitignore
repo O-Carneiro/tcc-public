@@ -1,0 +1,65 @@
+# tcc-public: só o que é fonte vai para o repositório.
+
+# ---------------------------------------------------------------------------
+# LaTeX: saída de compilação (base: .gitignore do modelo ccsl-usp/modelo-latex)
+# ---------------------------------------------------------------------------
+*.dvi
+*.ps
+*-current
+*.bbl
+*.aux
+*.log
+*.toc
+*.cb
+*.out
+*.blg
+*.brf
+*.ilg
+*.ind
+*.lof
+*.lot
+*.lop
+*.idx
+*.bcf
+*.fls
+*.run.xml
+*.synctex
+*.synctex.gz
+*.fdb_latexmk
+*.nav
+*.snm
+*.vrb
+*.(busy)
+*.xmpdata
+timestamp
+missfont.log
+
+# Gerados pelo modelo durante a compilação (imelooks.sty)
+mkidxhead.ist
+hyperxindy.xdy
+
+# Restos do biber quando uma compilação falha no meio
+*-SAVE-ERROR
+
+# O PDF é gerado; não versionar. Para publicar, anexar o PDF a uma release.
+tcc_v3/main.pdf
+
+# ---------------------------------------------------------------------------
+# Protótipo (toy_otel_showcase): ver também toy_otel_showcase/.gitignore
+# ---------------------------------------------------------------------------
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# ---------------------------------------------------------------------------
+# Sistema e editores
+# ---------------------------------------------------------------------------
+.DS_Store
+*~
+*.swp
+.vscode/
+.idea/
+
+# Configuração local do Claude Code (pessoal, não faz parte do produto)
+.claude/

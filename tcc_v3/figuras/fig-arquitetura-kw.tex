@@ -1,0 +1,57 @@
+%!TeX root=../main.tex
+% Figura 2.3: arquitetura conceitual do kworkflow.
+% Adaptada de Tadokoro, Siqueira e Meirelles (2025), Fig. 6 ("kw conceptual
+% architecture"). Mantém as camadas do original e destaca as duas
+% bibliotecas que gravam os dados de uso (kwlib, onde fica statistics_manager,
+% e kw_db), retomadas na
+% seção 2.4. Como no original, as ligações são ilustrativas.
+\begin{tikzpicture}[
+    x=1cm, y=1cm,
+    every node/.style={font=\footnotesize, align=center},
+    peca/.style={draw, rounded corners=3pt, minimum width=1.9cm,
+                 minimum height=0.75cm, inner sep=2pt, fill=white,
+                 font=\footnotesize\ttfamily},
+    dado/.style={peca, very thick, fill=black!12},
+    camada/.style={draw, dashed, rounded corners=6pt, inner sep=6pt},
+    rotulo/.style={font=\scriptsize\scshape, anchor=west},
+    seta/.style={-{Latex[length=1.6mm]}, semithick},
+  ]
+  % Hub
+  \node[peca, minimum width=2.6cm, fill=black!6] (hub) at (4.5, 3.6)
+    {kw\\[-1pt]{\normalfont\scriptsize(ponto de entrada)}};
+
+  % Componentes
+  \node[peca] (c1) at (0.8, 2.0) {build};
+  \node[peca] (c2) at (3.0, 2.0) {deploy};
+  \node[peca] (c3) at (5.2, 2.0) {send-patch};
+  \node[peca] (c4) at (7.4, 2.0) {report};
+  \node (c5) at (9.0, 2.0) {\dots};
+
+  % Bibliotecas
+  \node[dado] (l1) at (0.8, 0.4) {kw\_db};
+  \node[dado] (l2) at (3.0, 0.4) {kwlib};
+  \node[peca] (l3) at (5.2, 0.4) {kw\_string};
+  \node[peca] (l4) at (7.4, 0.4) {remote};
+  \node (l5) at (9.0, 0.4) {\dots};
+
+  % Plugins
+  \node[peca, minimum width=2.7cm] (p1) at (2.6, -1.2) {kernel\_install};
+  \node[peca, minimum width=2.3cm] (p2) at (5.4, -1.2) {subsystems};
+  \node (p3) at (7.2, -1.2) {\dots};
+
+  % Molduras das camadas
+  \node[camada, fit=(c1)(c5)] (fc) {};
+  \node[camada, fit=(l1)(l5)] (fl) {};
+  \node[camada, fit=(p1)(p3)] (fp) {};
+  \node[rotulo] at ([xshift=2pt, yshift=7pt]fc.north west) {componentes};
+  \node[rotulo] at ([xshift=2pt, yshift=7pt]fl.north west) {bibliotecas};
+  \node[rotulo] at ([xshift=2pt, yshift=7pt]fp.north west) {plugins};
+
+  % O hub despacha para os componentes
+  \foreach \c in {c1, c2, c3, c4} {
+    \draw[seta] (hub.south) -- (\c.north);
+  }
+  % Os componentes usam bibliotecas e plugins (ligações ilustrativas)
+  \draw[seta] (fc.south) -- (fl.north);
+  \draw[seta] (fl.south) -- (fp.north);
+\end{tikzpicture}

@@ -1,0 +1,86 @@
+% =============================================================================
+% TCC — Telemetria de uso do kworkflow com OpenTelemetry
+% Blockout formal no modelo CCSL/IME-USP (github.com/ccsl-usp/modelo-latex).
+% As notas sobre o conteúdo de cada capítulo estão em ../escrita/notas.txt.
+% =============================================================================
+\documentclass[a4paper,12pt,twoside,english,brazilian]{book}
+
+\usepackage{imegoodies}
+\usepackage[thesis]{imelooks}
+
+\graphicspath{{figuras/},{logos/}}
+
+% Bibliotecas TikZ usadas nas figuras (figuras/fig-*.tex)
+\usetikzlibrary{arrows.meta, fit, shapes.multipart}
+
+\babeltags{br = brazilian, en = english}
+
+\addbibresource{bibliografia.bib}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% METADADOS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\title{Telemetria de uso do \texttt{kworkflow} com OpenTelemetry}
+\translatedtitle{Usage telemetry for \texttt{kworkflow} with OpenTelemetry}
+
+\author{Octávio Gomes Carneiro}
+
+\orientador{Prof. Dr. Paulo Roberto Miranda Meirelles}
+
+\tipotese{
+  tcc,
+}
+
+\defesa{
+  local={São Paulo},
+  data=2026-01-01,
+}
+
+\direitos{CC-BY}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\begin{document}
+
+\frontmatter
+
+\pagestyle{plain}
+
+\onehalfspacing
+
+\maketitle
+
+% Reinicia a contagem para que o resumo receba o número "i"
+\pagenumbering{roman}
+
+\input{conteudo/resumoabstract}
+
+\tableofcontents
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% CAPÍTULOS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\mainmatter
+
+\pagestyle{mainmatter}
+
+\singlespacing
+
+\input{conteudo/01-introducao}
+\input{conteudo/02-sobre-o-kworkflow}
+\input{conteudo/03-motivacao-e-objetivos}
+\input{conteudo/04-solucao-proposta}
+\input{conteudo/05-implementacao}
+\input{conteudo/06-privacidade}
+\input{conteudo/07-conclusao}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% REFERÊNCIAS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\backmatter
+
+\pagestyle{backmatter}
+
+\printbibliography[
+  title=\refname\label{sec:bib},
+  heading=bibintoc,
+]
+
+\end{document}
