@@ -71,5 +71,34 @@ quem conduz a pesquisa. Propomos o mecanismo que leva os dados para fora, de
 modo que sirva aos registros de hoje e aceite os de amanhã sem ser refeito.
 
 \section{A lacuna de coleta}
+\label{sec:lacuna}
+
+O kw já registra o próprio uso, guarda os registros num banco bem organizado
+e os lê na mesma máquina (Seções~\ref{sec:funcionalidades}
+e~\ref{sec:base-local}). O que não existe é um caminho para que esses dados
+cheguem a quem quer estudá-los. Hoje, um pesquisador que quisesse o uso do kw
+de um grupo de desenvolvedores teria de pedir a cada pessoa que enviasse, à
+mão, o próprio \texttt{kw.db} ou a saída do \texttt{kw report}. Isso não
+escala além de algumas pessoas, produz coletas feitas cada uma de um jeito e
+restringe a amostra a quem se dispõe a responder. E deixa só dois extremos. A
+saída do \texttt{kw report} perde informação que o banco tem, como o estado de
+cada execução, que o relatório descarta. O banco inteiro vai sem que se possa
+escolher, campo a campo, o que sai. Falta um caminho em que o que é enviado e
+o que é filtrado sejam configuráveis, para que a decisão fique com quem tem de
+tomá-la: os autores do kw, quem conduz a pesquisa e o próprio usuário, ao
+consentir. E mesmo um \textit{script} de exportação escrito para as cinco
+operações de hoje teria de ser refeito a cada ponto de dado novo da lista da
+Seção~\ref{sec:dados-de-uso}. A lacuna, portanto, não é só a falta de uma
+saída, mas a de uma saída que acompanhe a mudança dos dados.
+
+O problema também não é exclusivo do kw. Cada comando do kw é um processo que
+roda por segundos ou minutos e termina, sem um serviço permanente que possa
+enviar dados em segundo plano, e o kw é escrito em Bash. Ferramentas de linha
+de comando bem maiores, como a cadeia de ferramentas do Go, a interface de
+linha de comando do .NET, o Homebrew e o próprio Debian Popularity Contest,
+enfrentaram a mesma questão de levar dados de uso de máquinas espalhadas para
+um lugar central, cada uma com uma solução diferente
+(Seção~\ref{sec:alternativas}). O kw serve aqui de caso de estudo para um
+problema que é geral.
 
 \section{Objetivos do trabalho}
