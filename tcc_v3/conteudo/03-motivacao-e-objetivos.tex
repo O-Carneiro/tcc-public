@@ -5,6 +5,70 @@
 \label{cap:motivacao}
 
 \section{Dados de uso como fonte de pesquisa}
+\label{sec:dados-de-uso}
+
+Quem estuda empiricamente como o software é feito costuma partir de dois
+tipos de dado. O primeiro são os artefatos que o trabalho deixa: código,
+\textit{commits}, mensagens nas listas de discussão. \citet{meirelles2010attractiveness},
+por exemplo, analisaram 6.773 projetos de software livre do SourceForge para
+relacionar métricas de código à capacidade de cada projeto de atrair
+usuários e desenvolvedores. O segundo é o que as pessoas contam sobre o
+próprio trabalho, colhido em entrevistas e questionários.
+\citet{dias2021maintainer} entrevistaram 33 mantenedores de projetos como o
+kernel Linux, o Debian e o GitLab, e depois aplicaram um questionário a 90
+contribuidores, para entender o que distingue um bom mantenedor. O
+Capítulo~\ref{cap:kworkflow} já se apoiou nas duas fontes: o estudo de
+\citet{rigby2014peer} minera as listas do kernel, e o de
+\citet{tadokoro2025sustain} combina observação e questionários.
+
+Cada fonte alcança uma parte do processo. O artefato mostra o que foi
+entregue, mas não o caminho até ali. Um \textit{patch} que só compilou na
+décima tentativa chega ao repositório igual a um que compilou na primeira; as
+voltas pelos laços de falha da Figura~\ref{fig:fluxo-patchset} não deixam
+rastro.
+\citet{proksch2018enriched} apontam o mesmo problema e notam que, por ser caro
+observar o trabalho enquanto ele acontece, pesquisadores acabam estudando os
+artefatos depois do fato. O relato das pessoas cobre o caminho, mas depende do
+que elas lembram e escolhem contar, e ninguém costuma lembrar quantas vezes
+compilou o kernel na semana passada.
+
+Uma terceira fonte é o uso registrado pela própria ferramenta enquanto ela é
+usada. A ideia não é nova. \citet{murphy2006eclipse} monitoraram como
+desenvolvedores Java usavam o Eclipse para orientar a evolução da ferramenta,
+e \citet{proksch2018enriched} coletaram mais de 11 milhões de eventos de 81
+desenvolvedores no Visual Studio para servir de base a estudos empíricos.
+Esse tipo de dado não substitui os outros dois; serve para cruzá-los. Se as
+entrevistas dizem que a compilação é o gargalo, o registro de uso pode
+confirmar ou contradizer. Os dois exemplos, porém, vêm de ambientes
+integrados de desenvolvimento, e o fluxo do kernel acontece na linha de
+comando, espalhado por ferramentas que não registram nada.
+
+O kw é exceção: ele já registra o próprio uso (Seção~\ref{sec:funcionalidades}),
+e os seus autores já o apresentam como plataforma de pesquisa
+(Seção~\ref{sec:kw-o-que-e}). O artigo do kw vai além e lista o que valeria a
+pena medir: na compilação, o hardware e a estratégia de compilação cruzada;
+na instalação, a distribuição, o carregador de inicialização e o método; no
+envio de \textit{patches}, os mantenedores e listas de destino, para mostrar
+quem está sobrecarregado na hierarquia descrita na
+Seção~\ref{sec:modelo-kernel}. E anuncia o plano de um sistema de telemetria
+para que usuários enviem dados voluntariamente, inspirado no Debian Popularity
+Contest\footnote{No original: \enquote{We also plan to implement a telemetry
+system for users to voluntarily submit data for research, inspired by the
+Debian Popularity Contest}.} \citep{tadokoro2025kw, debianpopcon}. O plano de
+pesquisa do grupo prevê exatamente esse cruzamento de fontes: entrevistas e
+telemetria anonimizada com desenvolvedores experientes, que usariam o kw no
+trabalho do dia a dia e enviariam os dados de uso para análise
+\citep{tadokoro2025sustain}.
+
+Quase nada dessa lista o kw coleta hoje. O que ele registra são as cinco
+operações de compilação e instalação descritas na
+Seção~\ref{sec:funcionalidades}, e a lista dos autores é de planos, que vão
+mudar à medida que a pesquisa avançar. Os dois artigos dizem o que coletar e
+que modelo seguir, mas não como esses dados saem da máquina do
+desenvolvedor, em que formato e por qual protocolo. Este trabalho trata
+desse como. Não escolhemos quais dados o kw deve coletar, decisão que cabe a
+quem conduz a pesquisa. Propomos o mecanismo que leva os dados para fora, de
+modo que sirva aos registros de hoje e aceite os de amanhã sem ser refeito.
 
 \section{A lacuna de coleta}
 
