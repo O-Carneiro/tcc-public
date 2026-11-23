@@ -1,0 +1,4 @@
+[submodule "kworkflow"]
+	path = kworkflow
+	url = https://github.com/O-Carneiro/kworkflow.git
+	branch = telemetry
