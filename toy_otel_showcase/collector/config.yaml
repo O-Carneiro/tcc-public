@@ -12,6 +12,12 @@ processors:
         action: upsert
   batch:
     timeout: 1s
+  # Privacy filter: drops module names before export. Remove `attributes/privacy`
+  # from the logs pipeline to keep them.
+  attributes/privacy:
+    actions:
+      - key: kw.build_modules.module_names
+        action: delete
 
 exporters:
   debug:
@@ -19,6 +25,16 @@ exporters:
   otlphttp/sink:
     metrics_endpoint: http://sink:8000/v1/metrics
     encoding: json
+  # Separate instance: no queue and no retry, so the export is synchronous and
+  # the receiver answers 2xx only after the sink has committed (D23).
+  otlphttp/sinklogs:
+    logs_endpoint: http://sink:8000/v1/logs
+    encoding: json
+    timeout: 8s
+    sending_queue:
+      enabled: false
+    retry_on_failure:
+      enabled: false
 
 service:
   pipelines:
@@ -26,3 +42,7 @@ service:
       receivers: [otlp]
       processors: [resource, batch]
       exporters: [debug, otlphttp/sink]
+    logs:
+      receivers: [otlp]
+      processors: [resource, attributes/privacy]
+      exporters: [otlphttp/sinklogs]

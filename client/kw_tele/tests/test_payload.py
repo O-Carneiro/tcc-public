@@ -2,8 +2,12 @@
 
 import base64
 import calendar
+import contextlib
 import json
 import time
+from pathlib import Path
+
+import pytest
 
 from helpers.cli_case import CliCase
 from helpers.otlp import attrs, records
@@ -356,3 +360,31 @@ class TestIncludePredicate:
 
         assert include("executed", None)
         assert include("event", None)
+
+
+class TestRealSchemaExtension(CliCase):
+    def test_build_modules_exports_with_no_code_change(self):
+        real = Path(__file__).resolve().parents[3] / "kworkflow" / "database" / "kwdb.sql"
+        if not real.exists():
+            pytest.skip("real kwdb.sql not available")
+        self.seed(0)
+        self.sb.db.unlink()
+        with contextlib.closing(kwdb.connect(self.sb.db)) as conn:
+            conn.executescript(real.read_text())
+            conn.commit()
+        kwdb.sql(
+            self.sb.db,
+            "INSERT INTO build_modules_report "
+            "(label_name, status, date, time, elapsed_time_in_secs, module_count, module_names) "
+            "VALUES ('build', 'success', '2026-03-04', '05:06:07', 42, 3, 'a,b,c')",
+        )
+        recs = records(self.dry_run())
+        by_kind = {r["body"]["stringValue"]: attrs(r) for r in recs}
+        assert set(by_kind) == {"executed", "build_modules"}
+        bm, ex = by_kind["build_modules"], by_kind["executed"]
+        assert bm["kw.event.id"] == ex["kw.event.id"]
+        assert bm["kw.build_modules.module_count"] == {"intValue": "3"}
+        assert bm["kw.build_modules.module_names"] == {"stringValue": "a,b,c"}
+        assert ex["kw.executed.command_label"] == {"stringValue": "build"}
+        assert ex["kw.executed.status"] == {"stringValue": "success"}
+        assert ex["kw.executed.elapsed_time_in_secs"] == {"intValue": "42"}
