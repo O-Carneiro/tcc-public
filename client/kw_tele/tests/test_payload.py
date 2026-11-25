@@ -2,10 +2,8 @@
 
 import base64
 import calendar
-import contextlib
 import json
 import time
-from pathlib import Path
 
 import pytest
 
@@ -364,14 +362,7 @@ class TestIncludePredicate:
 
 class TestRealSchemaExtension(CliCase):
     def test_build_modules_exports_with_no_code_change(self):
-        real = Path(__file__).resolve().parents[3] / "kworkflow" / "database" / "kwdb.sql"
-        if not real.exists():
-            pytest.skip("real kwdb.sql not available")
         self.seed(0)
-        self.sb.db.unlink()
-        with contextlib.closing(kwdb.connect(self.sb.db)) as conn:
-            conn.executescript(real.read_text())
-            conn.commit()
         kwdb.sql(
             self.sb.db,
             "INSERT INTO build_modules_report "
@@ -388,3 +379,19 @@ class TestRealSchemaExtension(CliCase):
         assert ex["kw.executed.command_label"] == {"stringValue": "build"}
         assert ex["kw.executed.status"] == {"stringValue": "success"}
         assert ex["kw.executed.elapsed_time_in_secs"] == {"intValue": "42"}
+
+    def test_made_up_hw_table_exports_with_no_code_change(self):
+        self.seed(0)
+        db = self.sb.db
+        kwdb.sql(
+            db,
+            "CREATE TABLE hw (id INTEGER PRIMARY KEY REFERENCES event(id), "
+            "cpu_model TEXT, ram_mb INTEGER)",
+        )
+        kwdb.sql(db, "INSERT INTO event(date, time) VALUES ('2026-05-05','10:00:00')")
+        kwdb.sql(db, "INSERT INTO hw(id, cpu_model, ram_mb) VALUES (1, 'Ryzen 7', 16384)")
+        rec = records(self.dry_run())[0]
+        assert rec["body"] == {"stringValue": "hw"}
+        a = attrs(rec)
+        assert a["kw.hw.cpu_model"] == {"stringValue": "Ryzen 7"}
+        assert a["kw.hw.ram_mb"] == {"intValue": "16384"}

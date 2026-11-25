@@ -3,7 +3,8 @@ from pathlib import Path
 TESTS_DIR = Path(__file__).resolve().parent.parent
 ROOT = TESTS_DIR.parent
 SRC = ROOT / "src"
-KWDB_SQL = TESTS_DIR / "fixtures" / "kwdb.sql"
+# The real schema, owned by kw; tests that need a database skip when it is absent.
+KWDB_SQL = ROOT.parents[1] / "kworkflow" / "database" / "kwdb.sql"
 
 NOW = 1_800_000_000
 INSTANCE = "0b1f6b7e-5d0e-4c53-9d57-3f1a6d2b8c11"

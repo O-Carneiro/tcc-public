@@ -2,6 +2,8 @@ import contextlib
 import sqlite3
 from pathlib import Path
 
+import pytest
+
 from helpers.constants import KWDB_SQL
 
 
@@ -10,11 +12,14 @@ def connect(path):
 
 
 def make_db(path, with_sent_at=True):
+    if not KWDB_SQL.exists():
+        pytest.skip("real kwdb.sql not available: %s" % KWDB_SQL)
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     with contextlib.closing(connect(path)) as conn:
         conn.executescript(KWDB_SQL.read_text())
-        if with_sent_at:
-            conn.execute("ALTER TABLE event ADD COLUMN sent_at INTEGER")
+        if not with_sent_at:
+            # Simulates a database created by a kw that predates telemetry.
+            conn.execute("ALTER TABLE event DROP COLUMN sent_at")
         conn.commit()
 
 

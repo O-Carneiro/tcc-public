@@ -115,3 +115,52 @@ def build_modules(event_id, count, names=None):
     if names is not None:
         attrs["kw.build_modules.module_names"] = s(names)
     return record("build_modules", event_id, attrs)
+
+
+def d(v):
+    return {"doubleValue": v}
+
+
+def bl(v):
+    return {"boolValue": v}
+
+
+def ns(iso):
+    """UTC ISO timestamp -> OTLP/JSON timeUnixNano string."""
+    from datetime import datetime, timezone
+    dt = datetime.fromisoformat(iso).replace(tzinfo=timezone.utc)
+    return str(int(dt.timestamp()) * 10**9)
+
+
+_next_event = iter(range(1000, 10**9))
+
+
+def eid():
+    """A fresh event id, unique across the whole test session."""
+    return next(_next_event)
+
+
+def post_recs(client, records, instance="inst-1"):
+    r = post_json(client, payload(records, instance=instance))
+    assert r.status_code == 200, r.text
+    return r
+
+
+def ex(label="build", status="success", secs=10, t=None, extra=None, event_id=None):
+    """An `executed` record with a fresh event id; t=None keeps the default time."""
+    attrs = {
+        "kw.executed.command_label": s(label),
+        "kw.executed.status": s(status),
+        "kw.executed.elapsed_time_in_secs": i(secs),
+    }
+    attrs.update(extra or {})
+    rec = record("executed", event_id if event_id is not None else eid(), attrs)
+    if t is not None:
+        rec["timeUnixNano"] = rec["observedTimeUnixNano"] = ns(t)
+    return rec
+
+
+def no_time(rec):
+    rec.pop("timeUnixNano", None)
+    rec.pop("observedTimeUnixNano", None)
+    return rec

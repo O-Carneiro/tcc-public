@@ -1,8 +1,8 @@
 import contextlib
 import datetime
 import json
-import sys
 import sqlite3
+import sys
 import uuid
 
 from kw_tele import db, kvfile, locks, payload, reflect, settings, transport
@@ -15,6 +15,7 @@ EXIT_REFUSED = 3
 EXIT_FAILED = 5
 
 UPLOAD_DEADLINE_SECONDS = 60
+MAX_SKIPPED_ROWS = 20  # bounds the POSTs a wrong-but-row-looking rejection can cost
 CONFIG_LOCK_TIMEOUT_SECONDS = 5
 PLACEHOLDER_INSTANCE_ID = "<assigned on opt-in>"
 
@@ -45,6 +46,9 @@ def _query(env, work):
     except db.DbError as exc:
         complain(str(exc))
         return None, exc.code
+    except sqlite3.Error as exc:
+        complain("kw database error: %s" % exc)
+        return None, EXIT_INTERNAL
 
 
 def upload_dry_run(env):
@@ -93,7 +97,7 @@ class _Upload:
 
     def _locked(self, config):
         env = self.env
-        before = settings.load_state(env.state_path)
+        before = settings.load_state(env.state_path, env.now)
         if not self.force and env.now < before.last_attempt_at + settings.retry_gap(config, before):
             return EXIT_OK
 
@@ -119,37 +123,75 @@ class _Upload:
         self._complain(message)
         return code
 
+    def _finish_refused(self, refused, skipped, failures, config):
+        # Accepted rows alongside refused ones are partial progress, as when the deadline hits.
+        self._report_sent(config)
+        count = len(skipped)
+        message = "upload failed: %s (%d event%s skipped)" % (
+            refused.status,
+            count,
+            "" if count == 1 else "s",
+        )
+        return self._fail(refused.status, 0 if self.batches_committed else failures, message, EXIT_FAILED)
+
+    def _report_sent(self, config):
+        if self.force and self.sent_events:
+            print("sent %d events to %s" % (self.sent_events, config.endpoint))
+
     def _send_all(self, before, failures):
         env = self.env
+        refused = None  # the last row-content rejection
+        skipped = []
         try:
             with _db(env.db_path) as conn:
                 schema = reflect.load(conn)
+                limit = None
                 while True:
                     config = settings.load_config(env.config_path)
                     if config.effective_consent != "yes":
                         # A consent change is not a failure.
                         self._record(before.last_status, before.consecutive_failures)
                         return EXIT_REFUSED
-                    batch = payload.pending(conn, schema, _resource(env, config), config.batch_size)
+                    # After a rejection the size stays small and doubles back on each success, so a
+                    # bad row costs about log2(batch_size) POSTs instead of re-bisecting from the top.
+                    limit = min(limit or config.batch_size, config.batch_size)
+                    batch = payload.pending(conn, schema, _resource(env, config), limit, skipped)
                     if not batch.marks:
                         break
-                    transport.post(config.endpoint, payload.encode(batch.document))
+                    try:
+                        transport.post(config.endpoint, payload.encode(batch.document))
+                    except transport.UploadFailed as exc:
+                        if not exc.permanent:
+                            raise
+                        refused = exc
+                        if len(batch.marks) > 1:
+                            # Halve from the same first row: the rows before the bad one get through.
+                            limit = len(batch.marks) // 2
+                            continue
+                        skipped.append(batch.marks[0][0])
+                        if len(skipped) >= MAX_SKIPPED_ROWS:
+                            return self._finish_refused(refused, skipped, failures, config)
+                        continue
                     self.sent_events += db.mark_sent(conn, batch.marks, env.now)
                     self.batches_committed += 1
-                    if len(batch.marks) < config.batch_size:
+                    if len(batch.marks) < limit:
                         # Drained; skipping the re-select keeps rows kw inserts mid-run for the next run.
                         break
+                    limit *= 2
         except db.DbError as exc:
             return self._fail(exc.status, failures, str(exc), exc.code)
         except transport.UploadFailed as exc:
             message = "upload failed: %s" % exc.status
             return self._fail(exc.status, failures, message, EXIT_FAILED)
 
+        if skipped:
+            return self._finish_refused(refused, skipped, failures, config)
+
         self.last_success_at = env.now
         self._record("ok", 0)
         if self.force:
             if self.sent_events:
-                print("sent %d events to %s" % (self.sent_events, config.endpoint))
+                self._report_sent(config)
             else:
                 print("nothing to send")
         return EXIT_OK
@@ -168,7 +210,7 @@ def _db_counts(env):
     try:
         with _db(env.db_path) as conn:
             return db.counts(conn)
-    except db.DbError:
+    except (db.DbError, sqlite3.Error):
         return None
 
 
@@ -206,16 +248,16 @@ def _write_yes(env, include_history):
             complain("consent already given; excluded history is not re-released")
             return EXIT_USAGE
         return EXIT_OK
-    if not include_history:
-        # Before the config write: a crash in between leaves consent at ask and sends nothing.
-        try:
-            with _db(env.db_path) as conn:
+    # Before the config write: a crash in between leaves consent at ask and sends nothing.
+    try:
+        with _db(env.db_path) as conn:
+            if not include_history:
                 db.exclude_pending(conn)
-        except db.NoDb:
-            pass
-        except db.DbError as exc:
-            complain(str(exc))
-            return exc.code
+    except db.NoDb:
+        pass
+    except db.DbError as exc:
+        complain(str(exc))
+        return exc.code
     kvfile.update(
         env.config_path,
         {

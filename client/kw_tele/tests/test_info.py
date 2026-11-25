@@ -1,5 +1,6 @@
 """§3 `info`."""
 
+import contextlib
 import json
 import time
 
@@ -185,3 +186,19 @@ class TestInfoError(CliCase):
         res = self.sb.run("info")
         assert res.code == 4, res
         assert EP in res.out
+
+
+class TestLockedDatabase(CliCase):
+    """D31: a database kw holds locked is reported, not a traceback."""
+
+    @pytest.mark.parametrize("args", [["info"], ["info", "--pending"], ["info", "--export"]])
+    def test_info_exits_cleanly_when_the_db_is_locked(self, args):
+
+        self.seed(2, endpoint=EP)
+        # kw_tele waits 10 s for the lock before giving up.
+        with contextlib.closing(kwdb.connect(self.sb.db)) as holder:
+            holder.execute("BEGIN EXCLUSIVE")
+            res = self.sb.run(*args)
+        assert "Traceback" not in res.err, res
+        assert res.code == 1, res
+        assert res.err.strip(), "the reason goes to stderr"

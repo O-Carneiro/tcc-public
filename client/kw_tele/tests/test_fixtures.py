@@ -36,6 +36,17 @@ class TestDbHelpers:
         assert kwdb.sql(db, "SELECT tag_id, duration FROM timebox")[0][1] == 900
         assert kwdb.sent_map(db) == {1: None, 2: None}
 
+    def test_database_is_built_from_the_real_kw_schema(self):
+        db = self.sb.make_db()
+        tables = {r[0] for r in kwdb.sql(db, "SELECT name FROM sqlite_master WHERE type='table'")}
+        assert "build_modules" in tables
+        assert "sent_at" in [r[1] for r in kwdb.sql(db, "PRAGMA table_info(event)")]
+
+    def test_missing_real_schema_skips_instead_of_erroring(self, monkeypatch):
+        monkeypatch.setattr(kwdb, "KWDB_SQL", self.sb.root / "absent.sql")
+        with pytest.raises(pytest.skip.Exception):
+            self.sb.make_db()
+
     def test_sent_at_column_is_optional(self):
         db = self.sb.make_db(with_sent_at=False)
         cols = [r[1] for r in kwdb.sql(db, "PRAGMA table_info(event)")]

@@ -3,14 +3,21 @@ import urllib.error
 import urllib.request
 
 SOCKET_TIMEOUT = 10
+ROW_REJECTED_CODES = (400, 413, 422)
 
 
 class UploadFailed(Exception):
-    """`status` is the value recorded in telemetry.state as last_status."""
+    """`status` is the value recorded in telemetry.state as last_status; `http_code` is set for HTTP errors."""
 
-    def __init__(self, status):
+    def __init__(self, status, http_code=None):
         super().__init__(status)
         self.status = status
+        self.http_code = http_code
+
+    @property
+    def permanent(self):
+        """Only these say the rows are the problem; any other 4xx is about the endpoint."""
+        return self.http_code in ROW_REJECTED_CODES
 
 
 class _RefuseRedirects(urllib.request.HTTPRedirectHandler):
@@ -31,7 +38,7 @@ def post(url, body):
         with _opener.open(request, timeout=SOCKET_TIMEOUT):
             pass
     except urllib.error.HTTPError as exc:
-        raise UploadFailed("http-%d" % exc.code) from None
+        raise UploadFailed("http-%d" % exc.code, exc.code) from None
     except urllib.error.URLError as exc:
         timed_out = isinstance(exc.reason, TimeoutError)
         raise UploadFailed("error:timeout" if timed_out else "error:connection") from None

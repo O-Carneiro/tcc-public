@@ -1,25 +1,32 @@
+# Env switches (all optional):
+#   SINK_PORT / COLLECTOR_PORT  host ports (defaults 8000 / 4318)
+#   BIND_ADDR                   host address for both ports (default 127.0.0.1; no auth, see README)
+#   COLLECTOR_CONFIG            collector config file (default: with the privacy filter)
+#   SINK_DATA_DIR               host directory for telemetry.db (default ./data)
+#   UID / GID                   user the sink runs as (default 1000:1000). Bash does not
+#                               export UID, so run: UID=$(id -u) GID=$(id -g) docker compose up
+#                               The data directory must exist and be writable by that user.
 services:
   collector:
     image: otel/opentelemetry-collector:0.121.0
-    container_name: kwotel-collector
     command: ["--config=/etc/otelcol/config.yaml"]
     volumes:
-      - ./collector/config.yaml:/etc/otelcol/config.yaml:ro
+      - ${COLLECTOR_CONFIG:-./collector/config.yaml}:/etc/otelcol/config.yaml:ro
     ports:
-      - "4318:4318"
+      - "${BIND_ADDR:-127.0.0.1}:${COLLECTOR_PORT:-4318}:4318"
     depends_on:
       sink:
         condition: service_healthy
 
   sink:
     build: ./sink
-    container_name: kwotel-sink
+    user: "${UID:-1000}:${GID:-1000}"
     environment:
       SINK_DB_PATH: /data/telemetry.db
     volumes:
-      - ./data:/data
+      - ${SINK_DATA_DIR:-./data}:/data
     ports:
-      - "8000:8000"
+      - "${BIND_ADDR:-127.0.0.1}:${SINK_PORT:-8000}:8000"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8000/healthz')"]
       interval: 2s

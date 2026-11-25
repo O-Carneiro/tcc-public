@@ -76,12 +76,18 @@ def _counter(values, key):
     return 0 if parsed is None else parsed
 
 
-def load_state(path):
+def load_state(path, now=None):
+    """With `now`, a time after it (the clock went back) reads as 0, so it cannot block the gate."""
     values = kvfile.read(path)
     status = values.get("last_status", "")
+
+    def moment(key):
+        value = _counter(values, key)
+        return 0 if now is not None and value > now else value
+
     return State(
-        last_attempt_at=_counter(values, "last_attempt_at"),
-        last_success_at=_counter(values, "last_success_at"),
+        last_attempt_at=moment("last_attempt_at"),
+        last_success_at=moment("last_success_at"),
         consecutive_failures=_counter(values, "consecutive_failures"),
         last_status=status if _STATUS.fullmatch(status) else "",
     )

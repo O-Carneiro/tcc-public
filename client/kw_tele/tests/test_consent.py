@@ -224,3 +224,20 @@ class TestUsage(CliCase):
         assert res.code == 1, res
         assert waited >= 4.0
         assert not self.sb.config_path.exists()
+
+
+class TestIncludeHistoryChecksSchema(CliCase):
+    """`--include-history` must go through the same database check as plain `--set yes`."""
+
+    @pytest.mark.parametrize("extra", [[], ["--include-history"]])
+    def test_outdated_schema_is_exit_4_and_consent_unchanged(self, extra):
+        self.sb.make_db(with_sent_at=False)
+        res = self.sb.run("consent", "--set", "yes", *extra)
+        assert res.code == 4, res
+        assert not self.sb.config_path.exists()
+
+    @pytest.mark.parametrize("extra", [[], ["--include-history"]])
+    def test_missing_db_still_accepts_consent(self, extra):
+        res = self.sb.run("consent", "--set", "yes", *extra)
+        assert res.code == 0, res
+        assert self.sb.read_config()["telemetry_consent"] == "yes"

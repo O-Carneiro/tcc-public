@@ -1,0 +1,54 @@
+# Same as config.yaml with the `attributes/privacy` processor removed, so
+# `kw.build_modules.module_names` reaches the sink. Used by demo/run.sh to show
+# the field. Trade-off: module names can identify a machine or a project, so the
+# default config deletes them at the collector. Whether a field is exported is
+# decided per deployment here, by whoever runs the collector, not in the client.
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  # First in every pipeline, so a spike is refused before anything else
+  # allocates. Over the limit the receiver answers a retryable error and the
+  # client treats it as transient (it keeps its rows and retries later).
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 256
+    spike_limit_mib: 64
+  resource:
+    attributes:
+      - key: pipeline.hop
+        value: otel-collector
+        action: upsert
+  batch:
+    timeout: 1s
+
+exporters:
+  debug:
+    verbosity: detailed
+  otlphttp/sink:
+    metrics_endpoint: http://sink:8000/v1/metrics
+    encoding: json
+  # Separate instance: no queue and no retry, so the export is synchronous and
+  # the receiver answers 2xx only after the sink has committed (D23).
+  otlphttp/sinklogs:
+    logs_endpoint: http://sink:8000/v1/logs
+    encoding: json
+    timeout: 8s
+    sending_queue:
+      enabled: false
+    retry_on_failure:
+      enabled: false
+
+service:
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, resource, batch]
+      exporters: [debug, otlphttp/sink]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, resource]
+      exporters: [otlphttp/sinklogs]

@@ -1,7 +1,9 @@
 """§3 `upload`: consent gate, dry-run, batching, state machine, failure handling."""
 
+import contextlib
 import fcntl
 import json
+import math
 import re
 
 from helpers.cli_case import CliCase
@@ -240,7 +242,6 @@ class TestFailure(CliCase):
         self.seed(2, endpoint=stub.url)
         assert self.sb.run("upload", "--force").code == 5
         assert self.sb.read_state()["last_status"] == "http-400"
-        assert len(stub.posts()) == 1
 
     def test_redirect_to_a_200_is_still_a_failure(self):
         stub = self.serve(codes=["redirect"])
@@ -621,3 +622,317 @@ class TestDeadline(CliCase):
         state = self.sb.read_state()
         assert state["consecutive_failures"] == "2"
         assert state["last_status"] == "error:timeout"
+
+
+def _ids(req):
+    return [int(otlp.attrs(r)["kw.event.id"]["intValue"]) for r in otlp.records(req.json())]
+
+
+class Poison:
+    """Stub responder: a POST holding a bad id gets `code`; `transient` ids get 503 (bad ids win)."""
+
+    def __init__(self, bad, code=413, transient=()):
+        self.bad, self.code, self.transient = set(bad), code, set(transient)
+        self.accepted, self.rejected = [], []
+
+    def __call__(self, req):
+        ids = _ids(req)
+        if self.bad & set(ids):
+            self.rejected.append(ids)
+            return self.code, {}, b"{}"
+        if self.transient & set(ids):
+            return 503, {}, b"{}"
+        self.accepted.extend(ids)
+        return 200, {}, b"{}"
+
+
+def _bulk(db, count):
+    with contextlib.closing(kwdb.connect(db)) as conn:
+        conn.executemany(
+            "INSERT INTO statistics_report "
+            "(label_name, status, date, time, elapsed_time_in_secs) VALUES (?,?,?,?,?)",
+            [("build", "success", "2026-03-04", "05:06:07", i) for i in range(count)],
+        )
+        conn.commit()
+
+
+def _marked(db):
+    return sorted(i for i, v in kwdb.sent_map(db).items() if v == NOW)
+
+
+class TestPoisonBatch(CliCase):
+    """A permanent 4xx must not block newer rows: halve the batch, skip a lone bad row."""
+
+    @pytest.mark.parametrize("code", [400, 413, 422])
+    def test_bad_row_is_skipped_and_the_others_are_sent(self, code):
+        stub = self.serve(respond=Poison({3}, code=code))
+        self.seed(5, endpoint=stub.url)
+        res = self.sb.run("upload", "--force", timeout=30)
+        assert res.code == 5, res
+        assert kwdb.sent_map(self.sb.db) == {1: NOW, 2: NOW, 3: None, 4: NOW, 5: NOW}
+        assert self.sb.read_state()["last_status"] == "http-%d" % code
+
+    def test_each_row_is_accepted_at_most_once_and_matches_what_is_marked(self):
+        poison = Poison({3})
+        stub = self.serve(respond=poison)
+        self.seed(5, endpoint=stub.url)
+        self.sb.run("upload", "--force", timeout=30)
+        assert sorted(poison.accepted) == [1, 2, 4, 5]
+        assert _marked(self.sb.db) == sorted(poison.accepted)
+        assert [3] in poison.rejected
+        assert len(stub.posts()) <= 2 * 5
+
+    def test_bad_row_at_the_front_does_not_stall_small_batches(self):
+        stub = self.serve(respond=Poison({1}, code=400))
+        self.seed(5, endpoint=stub.url, batch_size=2)
+        res = self.sb.run("upload", "--force", timeout=30)
+        assert res.code == 5, res
+        assert kwdb.sent_map(self.sb.db) == {1: None, 2: NOW, 3: NOW, 4: NOW, 5: NOW}
+        assert len(stub.posts()) <= 12
+
+    def test_all_rows_bad_sends_nothing_and_stops(self):
+        stub = self.serve(codes=[400])
+        self.seed(4, endpoint=stub.url)
+        res = self.sb.run("upload", "--force", timeout=30)
+        assert res.code == 5, res
+        assert set(kwdb.sent_map(self.sb.db).values()) == {None}
+        assert len(stub.posts()) <= 2 * 4
+
+    def test_info_reports_the_skipped_row_as_pending(self):
+        stub = self.serve(respond=Poison({3}))
+        self.seed(5, endpoint=stub.url)
+        self.sb.run("upload", "--force", timeout=30)
+        out = self.sb.run("info").out
+        assert "pending events: 1" in out
+        assert "last status: http-413" in out
+        assert self.sb.run("info", "--pending").out.splitlines()[0] == "pending_events=1"
+
+    @pytest.mark.parametrize("code", [408, 429, 500, 503])
+    def test_transient_codes_are_not_bisected(self, code):
+        stub = self.serve(codes=[code])
+        self.seed(4, endpoint=stub.url)
+        res = self.sb.run("upload", "--force")
+        assert res.code == 5, res
+        assert len(stub.posts()) == 1
+        assert set(kwdb.sent_map(self.sb.db).values()) == {None}
+
+
+class TestPoisonBatchLimits(CliCase):
+    """D41: only 400/413/422 blame the rows; skips are capped; partial progress is recorded."""
+
+    @pytest.mark.parametrize("code", [401, 403, 404, 405, 415, 421])
+    def test_endpoint_level_4xx_stops_at_the_first_failure(self, code):
+        stub = self.serve(codes=[code])
+        self.seed(0, endpoint=stub.url)
+        _bulk(self.sb.db, 3000)
+        res = self.sb.run("upload", "--force", timeout=15)
+        assert res.code == 5, res
+        assert len(stub.posts()) <= 2
+        assert self.sb.read_state()["last_status"] == "http-%d" % code
+        assert self.sb.read_state()["consecutive_failures"] == "1"
+        assert _marked(self.sb.db) == []
+        assert kwdb.sql(self.sb.db, "SELECT count(*) FROM event WHERE sent_at IS NULL")[0][0] == 3000
+
+    def test_at_most_20_rows_are_skipped_per_run(self):
+        bad = set(range(3, 91, 3))  # 30 interleaved bad rows among 100
+        poison = Poison(bad)
+        stub = self.serve(respond=poison)
+        self.seed(0, endpoint=stub.url)
+        _bulk(self.sb.db, 100)
+        res = self.sb.run("upload", "--force", timeout=60)
+        assert res.code == 5, res
+        assert set(_marked(self.sb.db)) <= set(range(1, 101)) - bad
+        assert len(poison.accepted) == len(set(poison.accepted))
+        singles = [r for r in poison.rejected if len(r) == 1]
+        assert 20 <= len(singles) <= 21
+        good_batches = len(stub.posts()) - len(poison.rejected)
+        assert len(stub.posts()) <= 20 * (math.log2(500) + 2) + good_batches
+        assert self.sb.read_state()["last_status"] == "http-413"
+
+    def test_more_than_999_pending_rows_with_skips_is_not_an_error(self):
+        poison = Poison({5})
+        stub = self.serve(respond=poison)
+        self.seed(0, endpoint=stub.url, batch_size=1200)
+        _bulk(self.sb.db, 1500)
+        res = self.sb.run("upload", "--force", timeout=60)
+        assert res.code == 5, res
+        assert "Traceback" not in res.err and "OperationalError" not in res.err, res
+        assert _marked(self.sb.db) == [i for i in range(1, 1501) if i != 5]
+        assert self.sb.read_state()["last_status"] == "http-413"
+
+    def test_5xx_while_bisecting_keeps_accepted_rows_and_reports_the_transient_status(self):
+        poison = Poison({3}, transient={4})
+        stub = self.serve(respond=poison)
+        self.seed(5, endpoint=stub.url)
+        res = self.sb.run("upload", "--force", timeout=30)
+        assert res.code == 5, res
+        assert _marked(self.sb.db) == sorted(poison.accepted) == [1, 2]
+        assert self.sb.read_state()["last_status"] == "http-503"
+
+    def test_accepted_rows_with_refused_rows_count_as_partial_progress(self):
+        stub = self.serve(respond=Poison({3}))
+        self.seed(5, endpoint=stub.url)
+        self.sb.write_state(consecutive_failures=3, last_success_at=42)
+        res = self.sb.run("upload", "--force", timeout=30)
+        assert res.code == 5, res
+        state = self.sb.read_state()
+        assert state["last_status"] == "http-413"
+        assert state["consecutive_failures"] == "0"
+        # Same as the D30 deadline path: partial progress is not a success.
+        assert state["last_success_at"] == "42"
+        assert state["last_attempt_at"] == str(NOW)
+
+    def test_nothing_accepted_keeps_counting_the_failure(self):
+        stub = self.serve(codes=[400])
+        self.seed(4, endpoint=stub.url)
+        self.sb.write_state(consecutive_failures=3, last_success_at=42)
+        assert self.sb.run("upload", "--force", timeout=30).code == 5
+        state = self.sb.read_state()
+        assert (state["last_status"], state["consecutive_failures"]) == ("http-400", "4")
+        assert state["last_success_at"] == "42"
+
+    def test_second_run_retries_the_bad_row_first_and_delivers_the_others(self):
+        poison = Poison({3})
+        stub = self.serve(respond=poison)
+        self.seed(5, endpoint=stub.url)
+        self.sb.run("upload", "--force", timeout=30)
+        kwdb.add_executed(self.sb.db, date="2026-04-01")
+        kwdb.add_executed(self.sb.db, date="2026-04-02")
+        before = len(stub.posts())
+        res = self.sb.run("upload", "--force", timeout=30)
+        assert res.code == 5, res
+        assert _ids(stub.posts()[before])[0] == 3
+        assert _marked(self.sb.db) == [1, 2, 4, 5, 6, 7]
+        assert sorted(poison.accepted) == [1, 2, 4, 5, 6, 7]
+
+
+class TestLockedDbOtherCommands(CliCase):
+    def _locked(self, *args):
+        with contextlib.closing(kwdb.connect(self.sb.db)) as holder:
+            holder.execute("BEGIN EXCLUSIVE")
+            return self.sb.run(*args)
+
+    def test_config_on_a_locked_db_has_no_traceback(self):
+        self.seed(2)
+        res = self._locked("config")
+        assert "Traceback" not in res.err, res
+        # Either listing with unknown counts (0) or an error exit (1) is clean; a crash is not.
+        assert res.code in (0, 1), res
+
+    @pytest.mark.parametrize("extra", [[], ["--include-history"]])
+    def test_consent_yes_on_a_locked_db_fails_and_changes_nothing(self, extra):
+        self.seed(2, consent=False)
+        res = self._locked("consent", "--set", "yes", *extra)
+        assert "Traceback" not in res.err, res
+        assert res.code == 1, res
+        assert not self.sb.config_path.exists()
+
+
+class TestSizeLimit(CliCase):
+    """A 413 that halving resolves is not a failure: only skipped rows make a run fail."""
+
+    @staticmethod
+    def _limit(max_records, bad=()):
+        accepted = []
+
+        def respond(req):
+            ids = _ids(req)
+            if len(ids) > max_records or set(ids) & set(bad):
+                return 413, {}, b"{}"
+            accepted.extend(ids)
+            return 200, {}, b"{}"
+
+        respond.accepted = accepted
+        return respond
+
+    def test_size_only_413_ends_in_success(self):
+        respond = self._limit(50)
+        stub = self.serve(respond=respond)
+        self.seed(0, endpoint=stub.url, batch_size=200)
+        _bulk(self.sb.db, 300)
+        self.sb.write_state(consecutive_failures=2, last_success_at=42)
+        res = self.sb.run("upload", "--force", timeout=30)
+        assert res.code == 0, res
+        assert "sent 300 events" in res.out
+        assert _marked(self.sb.db) == list(range(1, 301))
+        assert sorted(respond.accepted) == list(range(1, 301))
+        state = self.sb.read_state()
+        assert (state["last_status"], state["consecutive_failures"]) == ("ok", "0")
+        assert state["last_success_at"] == str(NOW)
+
+    def test_later_run_with_a_backlog_still_ends_in_success(self):
+        respond = self._limit(50)
+        stub = self.serve(respond=respond)
+        self.seed(0, endpoint=stub.url, batch_size=200)
+        _bulk(self.sb.db, 300)
+        assert self.sb.run("upload", "--force", timeout=30).code == 0
+        _bulk(self.sb.db, 120)
+        res = self.sb.run("upload", "--force", timeout=30)
+        assert res.code == 0, res
+        assert _marked(self.sb.db) == list(range(1, 421))
+        assert self.sb.read_state()["last_status"] == "ok"
+
+    def test_size_limit_plus_one_bad_row_fails_and_skips_only_that_row(self):
+        respond = self._limit(50, bad={120})
+        stub = self.serve(respond=respond)
+        self.seed(0, endpoint=stub.url, batch_size=200)
+        _bulk(self.sb.db, 300)
+        res = self.sb.run("upload", "--force", timeout=30)
+        assert res.code == 5, res
+        assert _marked(self.sb.db) == [i for i in range(1, 301) if i != 120]
+        assert self.sb.read_state()["last_status"] == "http-413"
+
+
+class TestFutureState(CliCase):
+    """D40 for kw_tele: a time in the future (clock change) reads as 0, so the gate does not block."""
+
+    TEN_DAYS = 10 * 86400
+
+    @pytest.mark.parametrize(
+        "fields",
+        [
+            ["last_attempt_at"],
+            ["last_success_at"],
+            ["last_attempt_at", "last_success_at"],
+        ],
+    )
+    def test_future_time_does_not_block_a_due_upload(self, fields):
+        stub = self.serve()
+        self.seed(3, endpoint=stub.url)
+        state = {"last_attempt_at": NOW - self.TEN_DAYS, "last_success_at": NOW - self.TEN_DAYS}
+        state.update({f: NOW + self.TEN_DAYS for f in fields})
+        self.sb.write_state(consecutive_failures=0, last_status="ok", **state)
+        res = self.sb.run("upload")
+        assert res.code == 0, res
+        assert len(stub.posts()) == 1
+        assert set(kwdb.sent_map(self.sb.db).values()) == {NOW}
+        after = self.sb.read_state()
+        assert int(after["last_attempt_at"]) <= NOW
+        assert int(after["last_success_at"]) <= NOW
+
+    def test_future_times_are_rewritten_even_when_the_upload_fails(self):
+        stub = self.serve(codes=[503])
+        self.seed(2, endpoint=stub.url)
+        future = NOW + self.TEN_DAYS
+        self.sb.write_state(
+            last_attempt_at=future, last_success_at=future, consecutive_failures=0, last_status="ok"
+        )
+        assert self.sb.run("upload").code == 5
+        after = self.sb.read_state()
+        assert int(after["last_attempt_at"]) <= NOW
+        assert int(after["last_success_at"]) <= NOW
+
+
+class TestLockedDbDuringUpload(CliCase):
+    def test_locked_db_is_a_clean_exit_1_and_keeps_rows_pending(self):
+        stub = self.serve()
+        self.seed(2, endpoint=stub.url)
+        # kw_tele waits 10 s for the lock.
+        with contextlib.closing(kwdb.connect(self.sb.db)) as holder:
+            holder.execute("BEGIN EXCLUSIVE")
+            res = self.sb.run("upload", "--force")
+        assert "Traceback" not in res.err, res
+        assert res.code == 1, res
+        assert res.err.strip(), res
+        assert stub.posts() == []
+        assert set(kwdb.sent_map(self.sb.db).values()) == {None}

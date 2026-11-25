@@ -72,13 +72,13 @@ def _extension_rows(conn, extensions, first_id, last_id):
     return rows
 
 
-def _build(conn, schema, resource, condition, limit, export):
+def _build(conn, schema, resource, condition, params, limit, export):
     names = schema.event_columns
     selected = ", ".join(reflect.quote(name) for name in names)
     events = conn.execute(
         "SELECT %s, sent_at, CAST(date AS BLOB), CAST(time AS BLOB)"
         " FROM event WHERE %s ORDER BY id LIMIT ?" % (selected, condition),
-        (limit,),
+        (*params, limit),
     ).fetchall()
     if not events:
         return Batch({"resourceLogs": []}, [])
@@ -128,12 +128,16 @@ def _build(conn, schema, resource, condition, limit, export):
     return Batch(document, marks)
 
 
-def pending(conn, schema, resource, limit):
-    return _build(conn, schema, resource, "sent_at IS NULL", limit, export=False)
+def pending(conn, schema, resource, limit, skip_ids=()):
+    """`skip_ids` are rows already refused this run, left pending but not retried."""
+    condition = "sent_at IS NULL"
+    if skip_ids:
+        condition += " AND id NOT IN (%s)" % ", ".join("?" * len(skip_ids))
+    return _build(conn, schema, resource, condition, tuple(skip_ids), limit, export=False)
 
 
 def sent(conn, schema, resource):
-    return _build(conn, schema, resource, "sent_at > 0", -1, export=True)
+    return _build(conn, schema, resource, "sent_at > 0", (), -1, export=True)
 
 
 def encode(document):
