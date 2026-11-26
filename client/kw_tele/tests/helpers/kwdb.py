@@ -13,7 +13,10 @@ def connect(path):
 
 def make_db(path, with_sent_at=True):
     if not KWDB_SQL.exists():
-        pytest.skip("real kwdb.sql not available: %s" % KWDB_SQL)
+        pytest.fail(
+            f"real kw schema not found: {KWDB_SQL}; "
+            "run `git submodule update --init kworkflow` from the tcc-public repo root"
+        )
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     with contextlib.closing(connect(path)) as conn:
         conn.executescript(KWDB_SQL.read_text())
@@ -37,7 +40,12 @@ def add_executed(
 
 
 def add_timebox(
-    db, tag="work", date="2026-03-04", time="07:08:09", duration=1500, description="write tests"
+    db,
+    tag="work",
+    date="2026-03-04",
+    time="07:08:09",
+    duration=1500,
+    description="write tests",
 ):
     with contextlib.closing(connect(db)) as conn:
         conn.execute(
@@ -51,7 +59,8 @@ def add_timebox(
 
 def add_executed_many(db, count, first_day=1):
     return [
-        add_executed(db, date="2026-03-%02d" % (first_day + i), elapsed=i + 1) for i in range(count)
+        add_executed(db, date=f"2026-03-{first_day + i:02d}", elapsed=i + 1)
+        for i in range(count)
     ]
 
 

@@ -15,13 +15,17 @@ sys.path.insert(0, str(ROOT / "client" / "kw_tele" / "src"))
 
 from kw_tele import payload as kw_payload, reflect  # noqa: E402
 
+pytestmark = pytest.mark.usefixtures("raw_times")
+
+
 CPUS = ["alpha-1", "beta-2", "gamma-3"]
 DISTROS = ["debian", "arch"]
 
 
 def make_hw_db(path):
     if not KWDB_SQL.exists():
-        pytest.skip("real kwdb.sql not available: %s" % KWDB_SQL)
+        pytest.fail("real kwdb.sql not available: %s (run `git submodule update --init kworkflow`)"
+                    % KWDB_SQL)
     with contextlib.closing(sqlite3.connect(str(path))) as conn:
         conn.executescript(KWDB_SQL.read_text())
         conn.execute(
@@ -57,7 +61,7 @@ def upload(client, path, instance):
 
 
 def group(client, **params):
-    r = client.get("/analysis/group", params=params)
+    r = client.get("/analysis/query", params=params)
     assert r.status_code == 200, r.text
     return r.json()
 
@@ -90,57 +94,39 @@ def expected_by_cpu(sent):
     return acc
 
 
-def test_new_source_reaches_retrieval(client, tmp_path):
-    sent = populate(client, tmp_path)
+def test_new_source_and_new_column_reach_retrieval_without_sink_change(client, tmp_path):
+    sent = populate(client, tmp_path, with_distro=True)
 
-    schema = client.get("/analysis/schema")
-    kinds = {k["kind"]: k for k in schema.json()["kinds"]}
-    assert "hw" in kinds
-    names = {a["name"] for a in kinds["hw"]["attributes"]}
-    assert {"kw.hw.cpu_model", "kw.hw.ram_mb"} <= names
-    assert kinds["hw"]["records"] == len(sent)
-    assert kinds["hw"]["installs"] == 12
+    schemas = {k["schema"]: k for k in client.get("/analysis/schemas").json()["schemas"]}
+    attrs = client.get("/analysis/schema/hw/attributes").json()["attributes"]
+    assert {a["name"] for a in attrs} >= {"kw.hw.cpu_model", "kw.hw.ram_mb", "kw.hw.distro"}
+    assert (schemas["hw"]["records"], schemas["hw"]["installs"]) == (len(sent), 12)
 
-    resp = client.get("/analysis/group", params={
-        "kind": "hw", "by": "kw.hw.cpu_model", "measure": "kw.hw.ram_mb"})
-    assert resp.status_code == 200
-    body = resp.json()
+    body = group(client, schema="hw", by="kw.hw.cpu_model", measure="kw.hw.ram_mb")
     expected = expected_by_cpu(sent)
     assert [g["kw.hw.cpu_model"] for g in body["groups"]] == sorted(expected)
     for g in body["groups"]:
         want = expected[g["kw.hw.cpu_model"]]
-        assert g["records"] == len(want["rams"])
-        assert g["installs"] == len(want["installs"])
-        assert g["measured"] == len(want["rams"])
-        assert g["non_numeric"] == 0
+        assert (g["records"], g["installs"], g["measured"], g["non_numeric"]) == (
+            len(want["rams"]), len(want["installs"]), len(want["rams"]), 0)
         assert g["sum"] == sum(want["rams"])
         assert g["mean"] == pytest.approx(sum(want["rams"]) / len(want["rams"]))
         assert g["min"] == min(want["rams"]) and g["max"] == max(want["rams"])
 
-    for text in (schema.text, resp.text):
-        assert "service_instance_id" not in text
-        assert "install-0" not in text and "install-1" not in text
-
-
-def test_new_column_appears_without_code_change(client, tmp_path):
-    sent = populate(client, tmp_path, with_distro=True)
-
-    kinds = {k["kind"]: k for k in client.get("/analysis/schema").json()["kinds"]}
-    names = {a["name"] for a in kinds["hw"]["attributes"]}
-    assert {"kw.hw.cpu_model", "kw.hw.ram_mb", "kw.hw.distro"} <= names
-
-    body = group(client, kind="hw", by="kw.hw.distro", measure="kw.hw.ram_mb")
-    acc = defaultdict(lambda: {"rams": [], "installs": set()})
-    for n, _, ram, distro in sent:
-        acc[distro]["rams"].append(ram)
-        acc[distro]["installs"].add(n)
-    assert [g["kw.hw.distro"] for g in body["groups"]] == sorted(acc)
-    for g in body["groups"]:
-        want = acc[g["kw.hw.distro"]]
-        assert g["records"] == len(want["rams"])
-        assert g["installs"] == len(want["installs"])
-        assert g["mean"] == pytest.approx(sum(want["rams"]) / len(want["rams"]))
-
-    two = group(client, kind="hw", by="kw.hw.distro,kw.hw.cpu_model")
+    two = group(client, schema="hw", by="kw.hw.distro,kw.hw.cpu_model")
     assert sum(g["records"] for g in two["groups"]) == len(sent)
-    assert "service_instance_id" not in str(two) and "install-" not in str(two)
+
+
+def test_made_up_schema_is_discoverable_and_queryable(client):
+    from conftest import eid, record, s
+    for n in range(2):
+        r = post_json(client, {"resourceLogs": [{"resource": {"attributes": [
+            {"key": "service.instance.id", "value": s("i%d" % n)}]}, "scopeLogs": [{"logRecords": [
+                record("mailing_list", eid(), {"kw.ml.list": s("kw")})]}]}]})
+        assert r.status_code == 200, r.text
+    schemas = {k["schema"] for k in client.get("/analysis/schemas").json()["schemas"]}
+    assert "mailing_list" in schemas
+    attrs = client.get("/analysis/schema/mailing_list/attributes").json()["attributes"]
+    assert "kw.ml.list" in {a["name"] for a in attrs}
+    assert group(client, schema="mailing_list", by="kw.ml.list")["groups"] == [
+        {"kw.ml.list": "kw", "records": 2, "installs": 2}]

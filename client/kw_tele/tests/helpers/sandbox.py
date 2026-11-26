@@ -14,7 +14,7 @@ class Result:
         self.code, self.out, self.err = code, out, err
 
     def __repr__(self):
-        return "Result(code=%r, out=%r, err=%r)" % (self.code, self.out, self.err)
+        return f"Result(code={self.code!r}, out={self.out!r}, err={self.err!r})"
 
 
 class Sandbox:
@@ -78,7 +78,9 @@ class Sandbox:
     def write_config(self, data):
         kvfile.atomic_write(self.config_path, data)
 
-    def configure(self, endpoint=DEAD_URL, consent="yes", instance_id=INSTANCE, **extra):
+    def configure(
+        self, endpoint=DEAD_URL, consent="yes", instance_id=INSTANCE, **extra
+    ):
         """Write a config that grants effective consent unless a field is overridden."""
         values = {
             "telemetry_consent": consent,
@@ -87,7 +89,7 @@ class Sandbox:
             "endpoint": endpoint,
         }
         values.update({k: str(v) for k, v in extra.items()})
-        self.write_config("".join("%s=%s\n" % kv for kv in values.items()))
+        self.write_config("".join("{}={}\n".format(*kv) for kv in values.items()))
 
     def read_config_text(self):
         return self.config_path.read_text()
@@ -96,7 +98,9 @@ class Sandbox:
         return kvfile.parse_kv(self.read_config_text())
 
     def write_state(self, **values):
-        kvfile.atomic_write(self.state_path, "".join("%s=%s\n" % kv for kv in values.items()))
+        kvfile.atomic_write(
+            self.state_path, "".join("{}={}\n".format(*kv) for kv in values.items())
+        )
 
     def read_state(self):
         return kvfile.parse_kv(self.state_path.read_text())

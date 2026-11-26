@@ -53,6 +53,11 @@ fi
 case "$role" in
   in-history)
     kw_env kw telemetry opt-in --include-history > "$H/optin.log" 2>&1
+    # Example exclusion: the lowest-index opted-in install with build_modules rows excludes one field.
+    if [ "$i" -eq 0 ] && [ "$(sqlite3 "$H/.local/share/kw/kw.db" 'SELECT COUNT(*) FROM build_modules')" -gt 0 ]; then
+      echo "exclude_fields=kw.build_modules.module_names" >> "$H/.config/kw/telemetry.config"
+      echo "kw.build_modules.module_names" > "$H/exclude_fields.txt"
+    fi
     kw_env kw telemetry upload > "$H/upload1.log" 2>&1
     echo "upload exit $?" >> "$H/mock.log"
     ;;

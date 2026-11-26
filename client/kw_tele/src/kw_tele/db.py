@@ -25,7 +25,7 @@ def _decode(raw):
 def connect(path):
     """Open kw.db, which kw owns: a missing file or missing event.sent_at is an error, never created."""
     if not os.path.exists(path):
-        raise NoDb("kw database not found: %s" % path)
+        raise NoDb(f"kw database not found: {path}")
     conn = sqlite3.connect(path, timeout=10)
     conn.text_factory = _decode
     try:
@@ -35,7 +35,7 @@ def connect(path):
         raise
     except sqlite3.DatabaseError:
         conn.close()
-        raise NoDb("kw database is not a database: %s" % path) from None
+        raise NoDb(f"kw database is not a database: {path}") from None
     if "sent_at" not in columns:
         conn.close()
         raise NoSchema("kw database schema is outdated: event.sent_at is missing")

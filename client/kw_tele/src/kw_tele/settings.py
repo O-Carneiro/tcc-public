@@ -25,6 +25,7 @@ class Config:
     upload_interval: int
     upload_backoff: int
     batch_size: int
+    exclude_fields: tuple
 
     @property
     def effective_consent(self):
@@ -54,6 +55,11 @@ def _valid_endpoint(raw):
     return parts.scheme in ("http", "https") and bool(parts.hostname)
 
 
+def _field_list(raw):
+    items = (item.strip() for item in raw.split(","))
+    return tuple(dict.fromkeys(item for item in items if item))
+
+
 def load_config(path):
     values = kvfile.read(path)
     consent = values.get("telemetry_consent", "")
@@ -67,6 +73,7 @@ def load_config(path):
         instance_id=values.get("instance_id", ""),
         consented_endpoint=values.get("consented_endpoint", ""),
         endpoint=endpoint if _valid_endpoint(endpoint) else DEFAULT_ENDPOINT,
+        exclude_fields=_field_list(values.get("exclude_fields", "")),
         **numbers,
     )
 

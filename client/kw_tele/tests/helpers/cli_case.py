@@ -1,4 +1,8 @@
+import contextlib
+import io
 import json
+import os
+from unittest import mock
 
 from helpers import kwdb
 from helpers.constants import DEAD_URL
@@ -35,6 +39,22 @@ class CliCase:
         if consent:
             self.sb.configure(endpoint=endpoint, **cfg)
         return self.sb.db
+
+    def call(self, argv, env=None):
+        """Runs kw_tele.cli.main in this process; returns (code, stdout, stderr)."""
+        from kw_tele import cli
+
+        out, err = io.StringIO(), io.StringIO()
+        with (
+            mock.patch.dict(os.environ, env or self.sb.env(), clear=True),
+            contextlib.redirect_stdout(out),
+            contextlib.redirect_stderr(err),
+        ):
+            try:
+                code = cli.main(argv)
+            except SystemExit as exc:
+                code = exc.code
+        return code, out.getvalue(), err.getvalue()
 
     def dry_run(self, **kwargs):
         res = self.sb.run("upload", "--dry-run", **kwargs)

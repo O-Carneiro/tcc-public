@@ -38,7 +38,7 @@ def post(url, body):
         with _opener.open(request, timeout=SOCKET_TIMEOUT):
             pass
     except urllib.error.HTTPError as exc:
-        raise UploadFailed("http-%d" % exc.code, exc.code) from None
+        raise UploadFailed(f"http-{exc.code}", exc.code) from None
     except urllib.error.URLError as exc:
         timed_out = isinstance(exc.reason, TimeoutError)
         raise UploadFailed("error:timeout" if timed_out else "error:connection") from None

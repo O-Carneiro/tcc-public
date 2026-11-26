@@ -3,7 +3,7 @@ from pathlib import Path
 TESTS_DIR = Path(__file__).resolve().parent.parent
 ROOT = TESTS_DIR.parent
 SRC = ROOT / "src"
-# The real schema, owned by kw; tests that need a database skip when it is absent.
+# The real schema, owned by kw (a git submodule); a missing copy must fail tests, not skip them.
 KWDB_SQL = ROOT.parents[1] / "kworkflow" / "database" / "kwdb.sql"
 
 NOW = 1_800_000_000
@@ -20,6 +20,7 @@ CONFIG_KEYS = [
     "upload_interval",
     "upload_backoff",
     "batch_size",
+    "exclude_fields",
 ]
 STATE_KEYS = [
     "last_attempt_at",

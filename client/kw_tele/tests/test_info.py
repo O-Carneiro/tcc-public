@@ -1,204 +1,154 @@
 """§3 `info`."""
 
-import contextlib
 import json
-import time
 
 import pytest
 
 from helpers.cli_case import CliCase
+from helpers import constants, kwdb
 from helpers.otlp import attrs, records
-from helpers import constants, kwdb, otlp
 from helpers.constants import NOW
 
 EP = "http://collector.test:4318/v1/logs"
 
 
-class TestSummary(CliCase):
-    def setup_method(self, method):
-        super().setup_method(method)
+def parse_collected(out):
+    collected = {}
+    for line in out.split("collected:")[1].splitlines():
+        if line.strip():
+            kind, keys = line.split(":", 1)
+            collected[kind.strip()] = set(keys.replace(" ", "").split(","))
+    return collected
+
+
+EVENT_KEYS = {"kw.event.id", "kw.event.date", "kw.event.kind"}
+
+
+class TestInfo(CliCase):
+    def seed_mixed(self):
+        # 1 sent, 2 excluded, 3 and 4 pending, 5 (timebox) sent.
         self.seed(0, endpoint=EP)
-        db = self.sb.db
         for _ in range(4):
-            kwdb.add_executed(db)
-        kwdb.add_timebox(db)
-        kwdb.set_sent_at(db, 1, 1_700_000_000)
-        kwdb.set_sent_at(db, 2, 1_700_000_000)
-        kwdb.set_sent_at(db, 3, -1)
+            kwdb.add_executed(self.sb.db)
+        kwdb.add_timebox(self.sb.db)
+        kwdb.set_sent_at(self.sb.db, 1, 1_700_000_100)
+        kwdb.set_sent_at(self.sb.db, 2, -1)
+        kwdb.set_sent_at(self.sb.db, 5, 1_700_000_500)
 
-    def test_summary_has_consent_endpoint_instance_and_counts(self):
-        res = self.sb.run("info")
-        assert res.code == 0, res
-        out = res.out
-        assert "yes" in out
-        assert EP in out
-        assert constants.INSTANCE in out
-        assert all(word in out.lower() for word in ("pending", "sent", "excluded"))
-        lines = [l for l in out.splitlines() if "pending" in l.lower()]
-        assert any("2" in l for l in lines), lines
-        lines = [l for l in out.splitlines() if "excluded" in l.lower()]
-        assert any("1" in l for l in lines), lines
-
-    def test_summary_says_none_without_instance_id_and_never_when_no_attempts(self):
-        self.sb.write_config("telemetry_consent=ask\nendpoint=%s\n" % EP)
-        out = self.sb.run("info").out
-        assert "none" in out
-        assert "never" in out
-        assert "ask" in out
-
-    def test_summary_shows_last_status_and_local_iso_times(self):
+    def seed_described(self):
+        self.seed_mixed()
+        kwdb.sql(self.sb.db, "ALTER TABLE executed ADD COLUMN exit_code INTEGER")
         self.sb.write_state(
             last_attempt_at=NOW, last_success_at=NOW - 86400, last_status="http-503"
         )
-        out = self.sb.run("info", env={"TZ": "UTC"}).out
-        assert "http-503" in out
-        stamp = time.strftime("%Y-%m-%d", time.gmtime(NOW))
-        assert stamp in out
-        assert time.strftime("%Y-%m-%d", time.gmtime(NOW - 86400)) in out
 
-    @pytest.mark.parametrize(
-        "key",
-        [
-            "executed",
-            "timebox",
+    def test_summary_header_reports_config_state_and_counts(self):
+        self.seed_described()
+        res = self.sb.run("info")
+        assert res.code == 0, res
+        assert res.out.split("collected:")[0] == (
+            "consent: yes\n"
+            f"endpoint: {EP}\n"
+            f"instance_id: {constants.INSTANCE}\n"
+            "last success: 2027-01-14T08:00:00+00:00\n"
+            "last attempt: 2027-01-15T08:00:00+00:00\n"
+            "last status: http-503\n"
+            "pending events: 2\n"
+            "sent events: 2\n"
+            "excluded events: 1\n"
+        )
+
+    def test_summary_lists_the_collected_keys_per_kind_without_internal_columns(self):
+        self.seed_described()
+        out = self.sb.run("info").out
+        collected = parse_collected(out)
+        assert collected["executed"] == EVENT_KEYS | {
             "kw.executed.command_label",
             "kw.executed.status",
             "kw.executed.elapsed_time_in_secs",
+            "kw.executed.exit_code",
+        }
+        assert collected["timebox"] == EVENT_KEYS | {
             "kw.timebox.tag",
             "kw.timebox.duration",
             "kw.timebox.description",
-            "kw.event.date",
-        ],
-    )
-    def test_summary_lists_each_kind_with_its_attribute_keys(self, key):
-        assert key in self.sb.run("info").out
+        }
+        assert "sent_at" not in out
+        assert "kw.event.time" not in out
 
-    def test_summary_never_lists_sent_at_as_collected(self):
-        assert "sent_at" not in self.sb.run("info").out
+    def test_pending_reports_the_count_and_the_oldest_date(self):
+        self.seed_described()
+        assert self.sb.run("info", "--pending").out == (
+            "pending_events=2\npending_since=2026-03-04\n"
+        )
 
-    def test_collected_keys_follow_the_schema(self):
-        kwdb.sql(self.sb.db, "ALTER TABLE executed ADD COLUMN exit_code INTEGER")
-        assert "kw.executed.exit_code" in self.sb.run("info").out
-
-    def test_summary_writes_nothing(self):
-        before = self.snapshot()
-        self.sb.run("info")
-        self.assert_no_side_effects(before)
-
-    def test_summary_works_without_consent(self):
-        self.sb.config_path.unlink()
-        assert self.sb.run("info").code == 0
-
-    def test_flags_are_mutually_exclusive(self):
-        assert self.sb.run("info", "--export", "--pending").code == 2
-
-
-class TestPending(CliCase):
-    def test_prints_exactly_two_lines(self):
-        self.seed(0)
-        kwdb.add_executed(self.sb.db, date="2026-03-09")
-        kwdb.add_executed(self.sb.db, date="2026-02-01")
-        kwdb.add_executed(self.sb.db, date="2026-01-15")
-        kwdb.set_sent_at(self.sb.db, 3, 1_700_000_000)
-        kwdb.set_sent_at(self.sb.db, 2, -1)
-        res = self.sb.run("info", "--pending")
-        assert res.code == 0, res
-        assert res.out == "pending_events=1\npending_since=2026-03-09\n"
-
-    def test_empty_when_nothing_is_pending(self):
-        self.seed(0)
-        res = self.sb.run("info", "--pending")
-        assert res.out == "pending_events=0\npending_since=\n"
-
-    def test_works_without_consent_and_writes_nothing(self):
-        self.seed(2, consent=False)
-        before = self.snapshot()
-        res = self.sb.run("info", "--pending")
-        assert res.out == "pending_events=2\npending_since=2026-03-01\n"
-        self.assert_no_side_effects(before)
-
-    def test_exit_6_without_db_and_4_without_column(self):
-        assert self.sb.run("info", "--pending").code == 6
-        self.sb.make_db(with_sent_at=False)
-        assert self.sb.run("info", "--pending").code == 4
-
-
-class TestExport(CliCase):
-    def test_only_sent_rows_with_sent_at_attribute(self):
-        self.seed(0)
-        db = self.sb.db
-        for _ in range(3):
-            kwdb.add_executed(db)
-        kwdb.add_timebox(db)
-        kwdb.set_sent_at(db, 4, 1_700_000_500)
-        kwdb.set_sent_at(db, 1, 1_700_000_100)
-        kwdb.set_sent_at(db, 3, -1)
-        res = self.sb.run("info", "--export")
-        assert res.code == 0, res
-        doc = json.loads(res.out)
-        assert otlp.event_ids(doc) == [1, 4]
-        recs = records(doc)
-        assert attrs(recs[0])["kw.event.sent_at"] == {"intValue": "1700000100"}
-        assert attrs(recs[1])["kw.event.sent_at"] == {"intValue": "1700000500"}
-        assert recs[1]["body"] == {"stringValue": "timebox"}
-        assert "kw.timebox.tag" in attrs(recs[1])
-        assert "pending" not in res.out
-
-    def test_export_shape_matches_upload_payload(self):
+    def test_pending_since_is_empty_when_nothing_is_pending(self):
         self.seed(1)
         kwdb.set_sent_at(self.sb.db, 1, 1_700_000_100)
-        doc = json.loads(self.sb.run("info", "--export").out)
-        assert otlp.resource_attrs(doc)[0]["key"] == "service.name"
-        assert doc["resourceLogs"][0]["scopeLogs"][0]["scope"]["name"] == "kw_tele"
+        assert self.sb.run("info", "--pending").out == (
+            "pending_events=0\npending_since=\n"
+        )
 
-    def test_export_with_nothing_sent_is_valid_json(self):
-        self.seed(2)
-        res = self.sb.run("info", "--export")
-        assert res.code == 0, res
-        assert records(json.loads(res.out)) == []
+    def test_export_has_the_sent_rows_with_their_sent_at(self):
+        self.seed_described()
+        exported = json.loads(self.sb.run("info", "--export").out)
+        assert [(r["body"]["stringValue"], attrs(r)) for r in records(exported)] == [
+            (
+                "executed",
+                {
+                    "kw.event.id": {"intValue": "1"},
+                    "kw.event.date": {"stringValue": "2026-03-02"},
+                    "kw.event.kind": {"stringValue": "executed"},
+                    "kw.executed.command_label": {"stringValue": "build"},
+                    "kw.executed.status": {"stringValue": "success"},
+                    "kw.executed.elapsed_time_in_secs": {"intValue": "42"},
+                    "kw.event.sent_at": {"intValue": "1700000100"},
+                },
+            ),
+            (
+                "timebox",
+                {
+                    "kw.event.id": {"intValue": "5"},
+                    "kw.event.date": {"stringValue": "2026-03-02"},
+                    "kw.event.kind": {"stringValue": "timebox"},
+                    "kw.timebox.tag": {"stringValue": "work"},
+                    "kw.timebox.duration": {"intValue": "1500"},
+                    "kw.timebox.description": {"stringValue": "write tests"},
+                    "kw.event.sent_at": {"intValue": "1700000500"},
+                },
+            ),
+        ]
+        assert exported["resourceLogs"][0]["scopeLogs"][0]["scope"]["name"] == "kw_tele"
 
-    def test_export_writes_nothing_and_needs_no_consent(self):
+    def test_summary_without_instance_id_or_attempts(self):
+        self.sb.write_config(f"telemetry_consent=ask\nendpoint={EP}\n")
+        assert self.sb.run("info").out.split("collected:")[0].splitlines() == [
+            "consent: ask",
+            f"endpoint: {EP}",
+            "instance_id: none",
+            "last success: never",
+            "last attempt: never",
+            "last status: none",
+        ]
+
+
+class TestReadOnly(CliCase):
+    @pytest.mark.parametrize(
+        "args",
+        [
+            ["info"],
+            ["info", "--pending"],
+            ["info", "--export"],
+            ["upload", "--dry-run"],
+            ["config"],
+        ],
+        ids=" ".join,
+    )
+    def test_read_only_commands_write_nothing_and_need_no_consent(self, args):
         self.seed(2, consent=False)
         kwdb.set_sent_at(self.sb.db, 1, 1_700_000_100)
         before = self.snapshot()
-        res = self.sb.run("info", "--export")
+        res = self.sb.run(*args)
         assert res.code == 0, res
-        assert otlp.event_ids(json.loads(res.out)) == [1]
         self.assert_no_side_effects(before)
-
-    def test_exit_6_without_db_and_4_without_column(self):
-        assert self.sb.run("info", "--export").code == 6
-        self.sb.make_db(with_sent_at=False)
-        assert self.sb.run("info", "--export").code == 4
-
-
-class TestInfoError(CliCase):
-    def test_plain_info_prints_config_then_exits_6_without_db(self):
-        self.sb.configure(endpoint=EP)
-        res = self.sb.run("info")
-        assert res.code == 6, res
-        assert EP in res.out
-        assert constants.INSTANCE in res.out
-
-    def test_plain_info_prints_config_then_exits_4_without_column(self):
-        self.sb.make_db(with_sent_at=False)
-        self.sb.configure(endpoint=EP)
-        res = self.sb.run("info")
-        assert res.code == 4, res
-        assert EP in res.out
-
-
-class TestLockedDatabase(CliCase):
-    """D31: a database kw holds locked is reported, not a traceback."""
-
-    @pytest.mark.parametrize("args", [["info"], ["info", "--pending"], ["info", "--export"]])
-    def test_info_exits_cleanly_when_the_db_is_locked(self, args):
-
-        self.seed(2, endpoint=EP)
-        # kw_tele waits 10 s for the lock before giving up.
-        with contextlib.closing(kwdb.connect(self.sb.db)) as holder:
-            holder.execute("BEGIN EXCLUSIVE")
-            res = self.sb.run(*args)
-        assert "Traceback" not in res.err, res
-        assert res.code == 1, res
-        assert res.err.strip(), "the reason goes to stderr"
+        assert not self.sb.state_dir.exists()

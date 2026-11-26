@@ -48,9 +48,9 @@ def update(path, changes):
     for index, line in enumerate(lines):
         pair = _split_line(line)
         if pair and pair[0] in changes:
-            lines[index] = "%s=%s" % (pair[0], changes[pair[0]])
+            lines[index] = f"{pair[0]}={changes[pair[0]]}"
             pending.pop(pair[0], None)
-    lines.extend("%s=%s" % item for item in pending.items())
+    lines.extend(f"{key}={value}" for key, value in pending.items())
     _atomic_write(path, "\n".join(lines) + "\n")
 
 

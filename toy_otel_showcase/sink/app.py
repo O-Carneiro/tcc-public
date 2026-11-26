@@ -7,16 +7,16 @@ import re
 import sqlite3
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+from typing import Annotated
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 
 DB_PATH = os.environ.get("SINK_DB_PATH", "/data/telemetry.db")
 
-# dedupe_key = hash of (instance, body, time, attributes JSON): a retry is one row, while two rows
-# of one event that differ in attributes are two rows. NULL columns cannot serve in a UNIQUE key.
+# dedupe_key (D51) = hash of (instance, body, event id); without an event id, of (instance, body, time, attributes).
 LOG_RECORD_DDL = """CREATE TABLE IF NOT EXISTS log_record (
   id                      INTEGER PRIMARY KEY,
   batch_id                INTEGER NOT NULL REFERENCES export_batch(id),
@@ -46,27 +46,6 @@ CREATE TABLE IF NOT EXISTS export_batch (
   point_count INTEGER NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS metric_point (
-  id             INTEGER PRIMARY KEY,
-  batch_id       INTEGER NOT NULL REFERENCES export_batch(id),
-  received_at    TEXT    NOT NULL,
-  service_name   TEXT,
-  pipeline_hop   TEXT,
-  scope_name     TEXT,
-  metric_name    TEXT    NOT NULL,
-  metric_unit    TEXT,
-  metric_type    TEXT    NOT NULL,
-  time_unix_nano INTEGER,
-  attributes     TEXT,
-  value          REAL,
-  count          INTEGER,
-  sum            REAL,
-  min            REAL,
-  max            REAL
-);
-
-CREATE INDEX IF NOT EXISTS metric_point_name_idx ON metric_point (metric_name);
-
 {LOG_RECORD_DDL};
 
 CREATE TABLE IF NOT EXISTS log_record_raw (
@@ -76,6 +55,8 @@ CREATE TABLE IF NOT EXISTS log_record_raw (
   reason      TEXT,
   raw         TEXT
 );
+
+CREATE INDEX IF NOT EXISTS log_record_join ON log_record(body, service_instance_id, event_id);
 """
 
 _lock = threading.Lock()
@@ -134,54 +115,6 @@ def _attrs(kvs, strict=False):
     return out
 
 
-def _num(p):
-    if "asDouble" in p:
-        return float(p["asDouble"])
-    if "asInt" in p:
-        return float(p["asInt"])
-    return None
-
-
-def _flatten(payload):
-    for rm in payload.get("resourceMetrics", []):
-        resource = _attrs(rm.get("resource", {}).get("attributes", []))
-        head = (resource.get("service.name"), resource.get("pipeline.hop"))
-        for sm in rm.get("scopeMetrics", []):
-            scope = sm.get("scope", {}).get("name")
-            for m in sm.get("metrics", []):
-                common = (*head, scope, m["name"], m.get("unit"))
-                for kind in ("sum", "gauge", "histogram"):
-                    if kind not in m:
-                        continue
-                    for p in m[kind].get("dataPoints", []):
-                        ts = int(p.get("timeUnixNano", 0))
-                        at = json.dumps(_attrs(p.get("attributes", [])), sort_keys=True)
-                        if kind == "histogram":
-                            yield (
-                                *common,
-                                kind,
-                                ts,
-                                at,
-                                None,
-                                int(p.get("count", 0)),
-                                p.get("sum"),
-                                p.get("min"),
-                                p.get("max"),
-                            )
-                        else:
-                            yield (
-                                *common,
-                                kind,
-                                ts,
-                                at,
-                                _num(p),
-                                None,
-                                None,
-                                None,
-                                None,
-                            )
-
-
 def _i64(v):
     """OTLP/JSON int64: a JSON int or a decimal-digit string; None when absent."""
     if v is None:
@@ -223,8 +156,29 @@ def _event_id(rec):
     return None
 
 
-def _dedupe_key(instance, body, time_ns, attrs_json):
-    raw = json.dumps([instance, body, time_ns, attrs_json])
+def _now():
+    return datetime.now(timezone.utc)
+
+
+def _week_instant(t):
+    """Epoch seconds of the Monday 00:13:00 UTC of the week containing t (floor arithmetic, valid for negative t)."""
+    return t - ((t // 86400 + 3) % 7) * 86400 - t % 86400 + 780
+
+
+def _received_at():
+    return datetime.fromtimestamp(_week_instant(int(_now().timestamp())), timezone.utc).isoformat()
+
+
+def _coarsen_ns(ns):
+    return ns if not ns else _week_instant(ns // 10**9) * 10**9
+
+
+def _dedupe_key(instance, body, event_id, time_ns, attrs_json):
+    """D51: an event with an id is keyed by (instance, body, id); otherwise the D42 key."""
+    if event_id is not None:
+        raw = json.dumps([instance, body, event_id])
+    else:
+        raw = json.dumps([instance, body, time_ns, attrs_json])
     return hashlib.sha256(raw.encode("ascii")).hexdigest()
 
 
@@ -246,15 +200,15 @@ def _log_row(resource, scope, rec):
         resource.get("pipeline.hop"),
         scope.get("name"),
     )
-    time_ns = _i64(rec.get("timeUnixNano"))
+    time_ns = _coarsen_ns(_i64(rec.get("timeUnixNano")))
     row = (
         *texts,
         time_ns,
-        _i64(rec.get("observedTimeUnixNano")),
+        _coarsen_ns(_i64(rec.get("observedTimeUnixNano"))),
         body,
         event_id,
         attrs_json,
-        _dedupe_key(texts[1], body, time_ns, attrs_json),
+        _dedupe_key(texts[1], body, event_id, time_ns, attrs_json),
     )
     for v in (*texts, body):
         if v is not None and not isinstance(v, str):
@@ -314,16 +268,43 @@ def _migrate(conn):
         old = conn.execute(
             """SELECT id, batch_id, received_at, service_name, service_instance_id, pipeline_hop,
                       scope_name, time_unix_nano, observed_time_unix_nano, body, event_id, attributes
-                 FROM log_record_old"""
+                 FROM log_record_old ORDER BY id"""
         )
         conn.executemany(
             """INSERT OR IGNORE INTO log_record (id, batch_id, received_at, service_name,
                  service_instance_id, pipeline_hop, scope_name, time_unix_nano,
                  observed_time_unix_nano, body, event_id, attributes, dedupe_key)
                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            ((*r, _dedupe_key(r[4], r[9], r[7], r[11])) for r in old),
+            ((*r, _dedupe_key(r[4], r[9], r[10], r[7], r[11])) for r in old),
         )
         conn.execute("DROP TABLE log_record_old")
+        conn.commit()
+    except BaseException:
+        conn.rollback()
+        raise
+
+
+def _rekey(conn):
+    """Recompute every log_record dedupe_key (D51); of rows that collide keep the lowest id."""
+    conn.execute("BEGIN")
+    try:
+        seen, drop, new = set(), [], []
+        rows = conn.execute(
+            "SELECT id, service_instance_id, body, event_id, time_unix_nano, attributes, dedupe_key"
+            " FROM log_record ORDER BY id"
+        )
+        for id_, inst, body, event_id, time_ns, attrs, old in rows:
+            key = _dedupe_key(inst, body, event_id, time_ns, attrs)
+            if key in seen:
+                drop.append((id_,))
+                continue
+            seen.add(key)
+            if key != old:
+                new.append((key, id_))
+        conn.executemany("DELETE FROM log_record WHERE id = ?", drop)
+        # keys may be permuted between rows: park them on unique placeholders first (the column is NOT NULL)
+        conn.executemany("UPDATE log_record SET dedupe_key = 'rekey:' || id WHERE id = ?", [(i,) for _, i in new])
+        conn.executemany("UPDATE log_record SET dedupe_key = ? WHERE id = ?", new)
         conn.commit()
     except BaseException:
         conn.rollback()
@@ -358,98 +339,13 @@ def _startup():
     _conn.create_function("kw_num", 2, _kw_num, deterministic=True)
     _migrate(_conn)
     _conn.executescript(SCHEMA)
-    _conn.commit()
+    _rekey(_conn)
     print(f"[sink] writing to {DB_PATH}", flush=True)
 
 
 @app.get("/healthz")
 def healthz():
     return {"ok": True}
-
-
-@app.post("/v1/metrics")
-async def v1_metrics(request: Request):
-    body = await request.body()
-    gz = request.headers.get("content-encoding", "").lower() == "gzip"
-    return await run_in_threadpool(_store_metrics, body, gz)
-
-
-def _store_metrics(body, gz):
-    if gz:
-        body = gzip.decompress(body)
-
-    rows = list(_flatten(json.loads(body)))
-    received_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
-
-    with _lock:
-        try:
-            batch_id = _insert_metrics(rows, received_at, len(body))
-        except BaseException:
-            _conn.rollback()  # never leave the export_batch row in an open transaction
-            raise
-
-    print(f"[sink] batch {batch_id}: {len(rows)} points", flush=True)
-    return {"partialSuccess": {}}
-
-
-def _insert_metrics(rows, received_at, size):
-    cur = _conn.execute(
-        "INSERT INTO export_batch (received_at, body_bytes, point_count) VALUES (?,?,?)",
-        (received_at, size, len(rows)),
-    )
-    batch_id = cur.lastrowid
-    _conn.executemany(
-        """INSERT INTO metric_point (
-             batch_id, received_at, service_name, pipeline_hop, scope_name,
-             metric_name, metric_unit, metric_type, time_unix_nano,
-             attributes, value, count, sum, min, max)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-        [(batch_id, received_at, *r) for r in rows],
-    )
-    _conn.commit()
-    return batch_id
-
-
-@app.get("/stats")
-def stats():
-    """kw-report-shaped summary rebuilt from SQLite; should match the client."""
-    with _lock:
-        cmds = _conn.execute(
-            """SELECT json_extract(attributes,'$."kw.command"'),
-                      json_extract(attributes,'$."kw.status"'),
-                      SUM(count), SUM(sum), MIN(min), MAX(max)
-                 FROM metric_point
-                WHERE metric_name = 'kw.command.duration'
-             GROUP BY 1, 2 ORDER BY 1, 2"""
-        ).fetchall()
-        pomo = _conn.execute(
-            """SELECT json_extract(attributes,'$."kw.tag"'),
-                      SUM(CASE WHEN metric_name='kw.pomodoro.focus_time' THEN value END),
-                      SUM(CASE WHEN metric_name='kw.pomodoro.sessions' THEN value END)
-                 FROM metric_point
-                WHERE metric_name IN ('kw.pomodoro.focus_time','kw.pomodoro.sessions')
-             GROUP BY 1 ORDER BY 1"""
-        ).fetchall()
-        batches = _conn.execute(
-            "SELECT COUNT(*), COALESCE(SUM(point_count),0) FROM export_batch"
-        ).fetchone()
-
-    return {
-        "batches_received": batches[0],
-        "points_stored": batches[1],
-        "statistics": [
-            {
-                "command": c[0],
-                "status": c[1],
-                "total": c[2],
-                "min_secs": _finite(c[4]),
-                "max_secs": _finite(c[5]),
-                "avg_secs": _finite(round(c[3] / c[2], 2)) if c[2] and c[3] is not None else None,
-            }
-            for c in cmds
-        ],
-        "pomodoro": [{"tag": p[0], "focus_secs": _finite(p[1]), "sessions": _finite(p[2])} for p in pomo],
-    }
 
 
 @app.post("/v1/logs")
@@ -469,7 +365,7 @@ def _store_logs(body, gz):
     items = list(_split_logs(body))
     ok = [it[1] for it in items if it[0] == "ok"]
     raw = [it[1:] for it in items if it[0] == "raw"]
-    received_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    received_at = _received_at()
 
     with _lock:
         try:
@@ -506,60 +402,23 @@ def _store_logs(body, gz):
     return {"partialSuccess": {}}
 
 
-@app.get("/stats/logs")
-def stats_logs():
-    """kw-report aggregates over log_record. int64 values are stored as JSON strings, hence CAST."""
-    elapsed = "CAST(json_extract(attributes,'$.\"kw.executed.elapsed_time_in_secs\"') AS INTEGER)"
-    duration = "CAST(json_extract(attributes,'$.\"kw.timebox.duration\"') AS INTEGER)"
-    with _lock:
-        # SUM raises on int64 overflow; TOTAL (float) is the fallback, exact sums stay integers.
-        for attempt, total in enumerate((lambda x: f"SUM({x})",
-                                         lambda x: f"CASE WHEN COUNT({x}) THEN TOTAL({x}) END")):
-            try:
-                cmds = _conn.execute(
-                    f"""SELECT json_extract(attributes,'$."kw.executed.command_label"'),
-                               json_extract(attributes,'$."kw.executed.status"'),
-                               COUNT(*), {total(elapsed)}, MIN({elapsed}), MAX({elapsed})
-                          FROM log_record
-                         WHERE body = 'executed'
-                      GROUP BY 1, 2 ORDER BY 1, 2"""
-                ).fetchall()
-                pomo = _conn.execute(
-                    f"""SELECT json_extract(attributes,'$."kw.timebox.tag"'),
-                               COUNT(*), {total(duration)}
-                          FROM log_record
-                         WHERE body = 'timebox'
-                      GROUP BY 1 ORDER BY 1"""
-                ).fetchall()
-                break
-            except sqlite3.OperationalError as e:
-                if attempt == 1 or "overflow" not in str(e):
-                    raise
-    return {
-        "statistics": [
-            {"command": c[0], "status": c[1], "total": c[2],
-             "sum_secs": _finite(c[3]), "min_secs": c[4], "max_secs": c[5]}
-            for c in cmds
-        ],
-        "pomodoro": [{"tag": p[0], "sessions": p[1], "total_duration": _finite(p[2])} for p in pomo],
-    }
-
-
-_RESERVED = {"bucket", "records", "installs", "measured", "non_numeric", "sum", "mean", "min",
-             "max", "key"}
+_RESERVED = {"week", "install", "records", "installs", "measured", "non_numeric", "sum", "mean",
+             "min", "max", "key"}
 _MAX_GROUPS = 1000
 # SQLite integer division truncates toward zero; this floors, so pre-1970 times land in the right day.
 _FLOOR_SECS = ("(time_unix_nano - ((time_unix_nano % 1000000000) + 1000000000) % 1000000000)"
                " / 1000000000")
-_BUCKETS = {
-    "day": f"date({_FLOOR_SECS}, 'unixepoch')",
-    "week": f"date({_FLOOR_SECS}, 'unixepoch', 'weekday 0', '-6 days')",  # the Monday
-}
+# The Monday date of the primary record's time (alias p).
+_WEEK = f"date({_FLOOR_SECS}, 'unixepoch', 'weekday 0', '-6 days')".replace("time_unix_nano", "p.time_unix_nano")
 # json_type distinguishes JSON true/false, which json_extract flattens to 1/0.
 _AS_TEXT = (
     "CASE json_type(attributes, ?) WHEN 'true' THEN 'true' WHEN 'false' THEN 'false' "
     "ELSE CAST(json_extract(attributes, ?) AS TEXT) END"
 )
+_ISO_DATE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", re.ASCII)
+# Install rank: by each non-empty install's lowest log_record id, over the whole table.
+_RANKS = ("WITH rk(inst, r) AS (SELECT service_instance_id, ROW_NUMBER() OVER (ORDER BY MIN(id))"
+          " FROM log_record WHERE service_instance_id <> '' GROUP BY service_instance_id) ")
 
 
 def _finite(x):
@@ -571,86 +430,165 @@ def _path(name):
     return '$."' + name.replace("\\", "\\\\") + '"'
 
 
-@app.get("/analysis/schema")
-def analysis_schema():
+@app.get("/analysis/schemas")
+def analysis_schemas():
     with _lock:
-        kinds = _conn.execute(
+        rows = _conn.execute(
             """SELECT body, COUNT(*), COUNT(DISTINCT NULLIF(service_instance_id, ''))
                  FROM log_record WHERE body IS NOT NULL GROUP BY body ORDER BY body"""
         ).fetchall()
-        attrs = _conn.execute(
-            """SELECT l.body, j.key, COUNT(*)
-                 FROM log_record l, json_each(l.attributes) j
-                WHERE l.body IS NOT NULL GROUP BY l.body, j.key ORDER BY l.body, j.key"""
-        ).fetchall()
-    by_kind = {}
-    for kind, name, n in attrs:
-        by_kind.setdefault(kind, []).append({"name": name, "records": n})
-    return {"kinds": [{"kind": k, "records": n, "installs": inst, "attributes": by_kind.get(k, [])}
-                      for k, n, inst in kinds]}
+    return {"schemas": [{"schema": b, "records": n, "installs": inst} for b, n, inst in rows]}
+
+
+def _attribute_counts(schema):
+    return _conn.execute(
+        """SELECT j.key, COUNT(*) FROM log_record l, json_each(l.attributes) j
+            WHERE l.body = ? GROUP BY j.key ORDER BY j.key""", (schema,)).fetchall()
+
+
+@app.get("/analysis/schema/{schema}/attributes")
+def analysis_attributes(schema: str):
+    with _lock:
+        present = _conn.execute("SELECT 1 FROM log_record WHERE body = ? LIMIT 1", (schema,)).fetchone()
+        rows = _attribute_counts(schema) if present else []
+    if not present:
+        return JSONResponse({"error": f"unknown schema: {schema}"}, status_code=404)
+    return {"schema": schema, "attributes": [{"name": k, "records": n} for k, n in rows]}
 
 
 def _bad(reason):
     return JSONResponse({"error": reason}, status_code=400)
 
 
-@app.get("/analysis/group")
-def analysis_group(kind: str | None = None, by: str | None = None,
-                   measure: str | None = None, bucket: str | None = None):
-    if kind is None:
-        return _bad("missing kind")
-    if bucket is not None and bucket not in _BUCKETS:
-        return _bad("bucket must be day or week")
+def _bound(name, value):
+    """Epoch seconds of a strict YYYY-MM-DD date (UTC midnight), or None."""
+    if value is None:
+        return None
+    if not _ISO_DATE.fullmatch(value):
+        raise ValueError(f"{name} must be YYYY-MM-DD: {value}")
+    try:
+        return (date.fromisoformat(value) - date(1970, 1, 1)).days * 86400
+    except ValueError:
+        raise ValueError(f"{name} is not a real date: {value}") from None
+
+
+@app.get("/analysis/query")
+def analysis_query(schema: str | None = None, join: str | None = None, by: str | None = None,
+                   measure: str | None = None, bucket: str | None = None,
+                   where: Annotated[list[str] | None, Query()] = None,
+                   from_: Annotated[str | None, Query(alias="from")] = None, to: str | None = None):
+    if schema is None:
+        return _bad("missing schema")
+    joins = join.split(",") if join is not None else []
+    if len(joins) > 63:
+        return _bad("join takes at most 63 schemas")
     names = by.split(",") if by else []
-    if len(names) > 3:
-        return _bad("by takes at most 3 attributes")
+    wheres = where or []
     if len(set(names)) != len(names):
         return _bad("duplicate attribute in by")
+    items = bucket.split(",") if bucket is not None else []
+    if bucket is not None and (len(set(items)) != len(items) or not set(items) <= {"week", "install"}):
+        return _bad("bucket must be week and/or install")
+    buckets = [b for b in ("week", "install") if b in items]
+    conds = []  # (attribute, value)
+    for w in wheres:
+        name, colon, value = w.partition(":")
+        if not colon:
+            return _bad(f"where must be attribute:value: {w}")
+        conds.append((name, value))
+    try:
+        lo, hi = _bound("from", from_), _bound("to", to)
+    except ValueError as e:
+        return _bad(str(e))
 
     with _lock:
-        known = {r[0] for r in _conn.execute(
-            """SELECT DISTINCT j.key FROM log_record l, json_each(l.attributes) j
-                WHERE l.body = ?""", (kind,))}
-        present = _conn.execute(
-            "SELECT 1 FROM log_record WHERE body = ? LIMIT 1", (kind,)).fetchone()
-        if not present:
-            return _bad(f"unknown kind: {kind}")
-        for n in (*names, *([measure] if measure is not None else [])):
-            if n not in known or '"' in n:
-                return _bad(f"unknown attribute for {kind}: {n}")
+        present = {r[0] for r in _conn.execute("SELECT DISTINCT body FROM log_record")}
+        if schema not in present:
+            return _bad("unknown schema")
+        for n, j in enumerate(joins):
+            if j in joins[:n] or j == schema or not j:
+                return _bad(f"join must name distinct other schemas: {j!r}")
+            if j not in present:
+                return _bad("unknown schema (join)")
+        # Each name resolves once: the primary schema if it has it, else the first joined one that does.
+        keys = {}  # alias -> discovered names, read only when a name needs that schema
 
-        # Fragments are fixed text chosen by flags; names and kind only ever travel as bound
-        # parameters. Group columns: bucket first, then g0..g2.
-        inner, params, cols = [], [], []
-        if bucket:
-            inner.append(f"{_BUCKETS[bucket]} AS bucket")
-            cols.append("bucket")
+        def owner(name):
+            for n, s in enumerate([schema, *joins]):
+                a = "p" if n == 0 else f"j{n - 1}"
+                if a not in keys:
+                    keys[a] = {k for k, _ in _attribute_counts(s)}
+                if name in keys[a]:
+                    return a
+
+        alias = {}
+        for name in (*names, *([measure] if measure is not None else []), *(c[0] for c in conds)):
+            alias[name] = None if '"' in name else owner(name)
+            if alias[name] is None:
+                return _bad(f"unknown attribute for {schema}: {name}")
+
+        def col(name, expr):  # qualify the unqualified `attributes` of a fragment
+            return expr.replace("attributes", f"{alias[name]}.attributes")
+
+        # Fragments are fixed text; names and schemas only ever travel as bound parameters.
+        sel, sel_p, cols = [], [], []
+        if "week" in buckets:
+            sel.append(f"{_WEEK} AS w")
+            cols.append("w")
+        if "install" in buckets:
+            sel.append("rk.r AS i")
+            cols.append("i")
         for n, name in enumerate(names):
-            inner.append(f"{_AS_TEXT} AS g{n}")
-            params += [_path(name)] * 2
+            sel.append(f"{col(name, _AS_TEXT)} AS g{n}")
+            sel_p += [_path(name)] * 2
             cols.append(f"g{n}")
         outer = [*cols, "COUNT(*)", "COUNT(DISTINCT inst)"]
         if measure is not None:
-            inner.append("kw_num(json_type(attributes, ?), json_extract(attributes, ?)) AS m")
-            inner.append("NULLIF(json_type(attributes, ?), 'null') AS p")
-            params += [_path(measure)] * 3
-            outer += ["COUNT(m)", "COUNT(p)", "SUM(m)", "MIN(m)", "MAX(m)"]
-        sql = (f"SELECT {', '.join(outer)} FROM (SELECT NULLIF(service_instance_id, '') AS inst"
-               f"{''.join(', ' + c for c in inner)} FROM log_record WHERE body = ?)")
-        params.append(kind)
+            sel.append(col(measure, "kw_num(json_type(attributes, ?), json_extract(attributes, ?)) AS m"))
+            sel.append(col(measure, "NULLIF(json_type(attributes, ?), 'null') AS pt"))
+            sel_p += [_path(measure)] * 3
+            outer += ["COUNT(m)", "COUNT(pt)", "SUM(m)", "MIN(m)", "MAX(m)"]
+        src, src_p, where_sql, where_p = ["log_record p"], [], ["p.body = ?"], [schema]
+        for n, j in enumerate(joins):
+            src.append(f"LEFT JOIN log_record j{n} ON j{n}.body = ? AND j{n}.event_id = p.event_id"
+                       f" AND j{n}.service_instance_id = p.service_instance_id AND p.service_instance_id <> ''")
+            src_p.append(j)
+        if "install" in buckets:
+            src.append("LEFT JOIN rk ON rk.inst = p.service_instance_id")
+        for bound, op in ((lo, ">="), (hi, "<=")):
+            if bound is not None:
+                where_sql.append(f"CAST(strftime('%s', {_WEEK}) AS INTEGER) {op} ?")
+                where_p.append(bound)
+        for name, value in conds:
+            where_sql.append(f"{col(name, _AS_TEXT)} = ?")
+            where_p += [_path(name)] * 2 + [value]
+        sql = (f"{_RANKS if 'install' in buckets else ''}SELECT {', '.join(outer)} FROM "
+               f"(SELECT NULLIF(p.service_instance_id, '') AS inst{''.join(', ' + c for c in sel)} "
+               f"FROM {' '.join(src)} WHERE {' AND '.join(where_sql)})")
+        params = [*sel_p, *src_p, *where_p]
         if cols:
             sql += (" GROUP BY " + ", ".join(cols) + " ORDER BY "
                     + ", ".join(f"{c} IS NULL, {c}" for c in cols) + " LIMIT ?")
             params.append(_MAX_GROUPS + 1)
-        rows = _conn.execute(sql, params).fetchall()
+        try:
+            rows = _conn.execute(sql, params).fetchall()
+        except sqlite3.Error as e:
+            if "too many" not in str(e) and "at most" not in str(e):
+                raise
+            return _bad(f"query too large for sqlite: {e}")
 
+    cut = len(cols)
+    rows = [r for r in rows if r[cut]]  # nothing matched: no group
     truncated = len(rows) > _MAX_GROUPS
     keyed = any(n in _RESERVED for n in names)  # a reserved name would overwrite a stat field
     groups = []
     for row in rows[:_MAX_GROUPS]:
-        cut = len(cols)
         vals = dict(zip(cols, row[:cut]))
-        g = {"bucket": vals["bucket"]} if bucket else {}
+        g = {}
+        if "week" in buckets:
+            g["week"] = vals["w"]
+        if "install" in buckets:
+            g["install"] = None if vals["i"] is None else f"install {vals['i']}"
         group_vals = {name: vals[f"g{n}"] for n, name in enumerate(names)}
         if keyed:
             g["key"] = group_vals
@@ -658,11 +596,12 @@ def analysis_group(kind: str | None = None, by: str | None = None,
             g.update(group_vals)
         g["records"], g["installs"] = row[cut], row[cut + 1]
         if measure is not None:
-            measured, carried, total, lo, hi = row[cut + 2:]
-            total, lo, hi = _finite(total), _finite(lo), _finite(hi)
+            measured, carried, total, mn, mx = row[cut + 2:]
+            total, mn, mx = _finite(total), _finite(mn), _finite(mx)
             g.update(measured=measured, non_numeric=carried - measured, sum=total,
                      mean=_finite(total / measured) if measured and total is not None else None,
-                     min=lo, max=hi)
+                     min=mn, max=mx)
         groups.append(g)
-    return {"kind": kind, "by": names, "measure": measure, "bucket": bucket,
-            "keyed": keyed, "truncated": truncated, "groups": groups}
+    return {"schema": schema, "join": joins, "by": names, "bucket": buckets, "measure": measure,
+            "where": wheres, "from": from_, "to": to, "keyed": keyed, "groups": groups,
+            "truncated": truncated}

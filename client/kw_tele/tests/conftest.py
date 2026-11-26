@@ -11,7 +11,8 @@ sys.path.insert(0, str(SRC))
 
 def pytest_configure(config):
     config.addinivalue_line(
-        "markers", "slow: waits for kw_tele's fixed 60 s deadline (deselect with -m 'not slow')"
+        "markers",
+        "slow: waits for kw_tele's fixed 60 s deadline (deselect with -m 'not slow')",
     )
 
 

@@ -47,7 +47,7 @@ def _query(env, work):
         complain(str(exc))
         return None, exc.code
     except sqlite3.Error as exc:
-        complain("kw database error: %s" % exc)
+        complain(f"kw database error: {exc}")
         return None, EXIT_INTERNAL
 
 
@@ -56,7 +56,8 @@ def upload_dry_run(env):
     batch, code = _query(
         env,
         lambda conn: payload.pending(
-            conn, reflect.load(conn), _resource(env, config), config.batch_size
+            conn, reflect.load(conn), _resource(env, config), config.batch_size,
+            exclude=frozenset(config.exclude_fields),
         ),
     )
     if code == EXIT_OK:
@@ -127,7 +128,7 @@ class _Upload:
         # Accepted rows alongside refused ones are partial progress, as when the deadline hits.
         self._report_sent(config)
         count = len(skipped)
-        message = "upload failed: %s (%d event%s skipped)" % (
+        message = "upload failed: {} ({} event{} skipped)".format(
             refused.status,
             count,
             "" if count == 1 else "s",
@@ -136,7 +137,7 @@ class _Upload:
 
     def _report_sent(self, config):
         if self.force and self.sent_events:
-            print("sent %d events to %s" % (self.sent_events, config.endpoint))
+            print(f"sent {self.sent_events} events to {config.endpoint}")
 
     def _send_all(self, before, failures):
         env = self.env
@@ -145,6 +146,7 @@ class _Upload:
         try:
             with _db(env.db_path) as conn:
                 schema = reflect.load(conn)
+                exclude = frozenset(settings.load_config(env.config_path).exclude_fields)
                 limit = None
                 while True:
                     config = settings.load_config(env.config_path)
@@ -155,7 +157,9 @@ class _Upload:
                     # After a rejection the size stays small and doubles back on each success, so a
                     # bad row costs about log2(batch_size) POSTs instead of re-bisecting from the top.
                     limit = min(limit or config.batch_size, config.batch_size)
-                    batch = payload.pending(conn, schema, _resource(env, config), limit, skipped)
+                    batch = payload.pending(
+                        conn, schema, _resource(env, config), limit, skipped, exclude
+                    )
                     if not batch.marks:
                         break
                     try:
@@ -181,7 +185,7 @@ class _Upload:
         except db.DbError as exc:
             return self._fail(exc.status, failures, str(exc), exc.code)
         except transport.UploadFailed as exc:
-            message = "upload failed: %s" % exc.status
+            message = f"upload failed: {exc.status}"
             return self._fail(exc.status, failures, message, EXIT_FAILED)
 
         if skipped:
@@ -202,7 +206,7 @@ def upload(env, force):
         return _Upload(env, force).run()
     except (OSError, sqlite3.Error) as exc:
         if force:
-            complain("internal error: %s" % exc)
+            complain(f"internal error: {exc}")
         return EXIT_INTERNAL
 
 
@@ -229,7 +233,7 @@ def consent_set(env, answer, include_history):
                 return _write_no(env)
             return _write_yes(env, include_history)
     except (OSError, sqlite3.Error) as exc:
-        complain("internal error: %s" % exc)
+        complain(f"internal error: {exc}")
         return EXIT_INTERNAL
 
 
@@ -276,16 +280,16 @@ def config_command(env, changes):
             with locks.wait_lock(env.config_lock_path, CONFIG_LOCK_TIMEOUT_SECONDS):
                 kvfile.update(env.config_path, {k: str(v) for k, v in changes.items()})
         except OSError as exc:
-            complain("internal error: %s" % exc)
+            complain(f"internal error: {exc}")
             return EXIT_INTERNAL
     config = settings.load_config(env.config_path)
     state = settings.load_state(env.state_path)
     for source in (config, state):
         for key, value in vars(source).items():
-            print("%s=%s" % (key, value))
+            print("{}={}".format(key, ",".join(value) if isinstance(value, tuple) else value))
     counts = _db_counts(env)
     for key in ("pending", "sent", "excluded"):
-        print("%s_events=%s" % (key, counts[key] if counts else "unknown"))
+        print(f"{key}_events={counts[key] if counts else 'unknown'}")
     return EXIT_OK
 
 
@@ -301,36 +305,39 @@ def _iso(seconds):
 def info_summary(env):
     config = settings.load_config(env.config_path)
     state = settings.load_state(env.state_path)
-    print("consent: %s" % config.effective_consent)
-    print("endpoint: %s" % config.endpoint)
-    print("instance_id: %s" % (config.instance_id or "none"))
-    print("last success: %s" % _iso(state.last_success_at))
-    print("last attempt: %s" % _iso(state.last_attempt_at))
-    print("last status: %s" % (state.last_status or "none"))
-    found, code = _query(env, lambda conn: (db.counts(conn), reflect.load(conn).collected()))
+    print(f"consent: {config.effective_consent}")
+    print(f"endpoint: {config.endpoint}")
+    print("instance_id: {}".format(config.instance_id or "none"))
+    print(f"last success: {_iso(state.last_success_at)}")
+    print(f"last attempt: {_iso(state.last_attempt_at)}")
+    print("last status: {}".format(state.last_status or "none"))
+    exclude = frozenset(config.exclude_fields)
+    found, code = _query(env, lambda conn: (db.counts(conn), reflect.load(conn).collected(exclude)))
     if code != EXIT_OK:
         return code
     counts, kinds = found
     for key in ("pending", "sent", "excluded"):
-        print("%s events: %d" % (key, counts[key]))
+        print(f"{key} events: {counts[key]}")
     print("collected:")
     for kind, keys in kinds.items():
-        print("  %s: %s" % (kind, ", ".join(keys)))
+        print("  {}: {}".format(kind, ", ".join(keys)))
     return EXIT_OK
 
 
 def info_pending(env):
     found, code = _query(env, lambda conn: (db.counts(conn)["pending"], db.pending_since(conn)))
     if code == EXIT_OK:
-        print("pending_events=%d" % found[0])
-        print("pending_since=%s" % (found[1] or ""))
+        print(f"pending_events={found[0]}")
+        print("pending_since={}".format(found[1] or ""))
     return code
 
 
 def info_export(env):
     config = settings.load_config(env.config_path)
     batch, code = _query(
-        env, lambda conn: payload.sent(conn, reflect.load(conn), _resource(env, config))
+        env, lambda conn: payload.sent(
+            conn, reflect.load(conn), _resource(env, config), frozenset(config.exclude_fields)
+        )
     )
     if code == EXIT_OK:
         print(json.dumps(batch.document))

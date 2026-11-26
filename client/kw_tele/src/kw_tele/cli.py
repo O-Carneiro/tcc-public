@@ -11,7 +11,7 @@ def _bounded(key):
     def parse(raw):
         value = kvfile.parse_int(raw, low, high)
         if value is None:
-            raise argparse.ArgumentTypeError("%r is not an integer in %d..%d" % (raw, low, high))
+            raise argparse.ArgumentTypeError(f"{raw!r} is not an integer in {low}..{high}")
         return value
 
     return parse

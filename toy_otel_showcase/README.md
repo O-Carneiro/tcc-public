@@ -29,48 +29,50 @@ Without a matching user, `data/` and `telemetry.db` end up root-owned on Linux. 
 
 There is no authentication on any endpoint, and no TLS. The container listens on 0.0.0.0 inside; compose
 publishes the ports on `BIND_ADDR` (default 127.0.0.1). Setting `BIND_ADDR=0.0.0.0` exposes the sink and
-the read endpoints to the network. `/stats/logs` and `/analysis/*` return aggregates of everything stored.
+the read endpoints to the network. `/analysis/*` returns aggregates of everything stored.
 
 ## Collector
 
-`collector/config.yaml`: OTLP/HTTP receiver on 4318, two pipelines.
+`collector/config.yaml`: OTLP/HTTP receiver on 4318, one pipeline.
 
 | pipeline | processors | exporter |
 |---|---|---|
-| metrics | `resource` (stamps `pipeline.hop`), `batch` | `debug`, `otlphttp/sink` (queued) |
-| logs | `resource`, `attributes/privacy` | `otlphttp/sinklogs` (no queue, no retry) |
+| logs | `memory_limiter`, `resource` | `otlphttp/sinklogs` (no queue, no retry) |
 
 The logs exporter is synchronous on purpose: the collector answers 2xx only after the sink has committed,
 so a client that gets 2xx may mark its rows sent (D23). With the sink down the client sees a failure.
 
-`attributes/privacy` deletes `kw.build_modules.module_names` before export. It is a per-field filter
-at the collector: extending or removing it needs no change in the client. Trade-off: with it on, module
-names never reach storage; with it off, names that can identify a machine or project do.
-`collector/config.no-filter.yaml` is the same config without the processor; the demo uses it, and
-`COLLECTOR_CONFIG=./collector/config.no-filter.yaml` selects it for compose.
+The Collector filters nothing. Privacy is the user's per-field choice, made on the client: `exclude_fields`
+in kw_tele's `telemetry.config` lists attribute keys that are not sent (empty by default, so everything is
+sent). `kw.build_modules.module_names` is only an example of such a key; it is not a chosen field. A change
+affects later uploads only; rows already stored stay. The sink coarsens stored times to the week (Monday
+00:13:00 UTC), so `time_unix_nano`, `observed_time_unix_nano` and `received_at` are week instants.
 
 ## Sink endpoints
 
 | endpoint | purpose |
 |---|---|
-| `POST /v1/metrics` | OTLP/JSON metrics into `metric_point` |
 | `POST /v1/logs` | OTLP/JSON log records into `log_record`; unparsable bodies are kept in `log_record_raw` |
 | `GET /healthz` | liveness |
-| `GET /stats` | metrics summary |
-| `GET /stats/logs` | `kw report`-style aggregates over the stored log records |
-| `GET /analysis/schema` | kinds, attributes and counts, discovered from the stored data |
-| `GET /analysis/group` | group by up to 3 attributes, optional numeric `measure` and `bucket=day\|week` |
+| `GET /analysis/schemas` | schemas (record bodies) with record and install counts, discovered from the stored data |
+| `GET /analysis/schema/{schema}/attributes` | attributes of one schema with record counts (unknown schema: 404) |
+| `GET /analysis/query` | `schema` (required); optional `join` (other schemas, same install and event id), `by` (any number of attributes), numeric `measure`, `bucket` (`week` and/or `install`), repeatable `where=attr:value`, `from`/`to` (`YYYY-MM-DD`) |
 
 Example:
 
 ```sh
-curl -s localhost:8000/analysis/schema
-curl -s --get localhost:8000/analysis/group \
-  --data-urlencode kind=executed --data-urlencode by=kw.executed.command_label \
+curl -s localhost:8000/analysis/schemas
+curl -s --get localhost:8000/analysis/query \
+  --data-urlencode schema=executed --data-urlencode by=kw.executed.command_label \
   --data-urlencode measure=kw.executed.elapsed_time_in_secs --data-urlencode bucket=week
 ```
 
-Responses carry no install ids. A new record kind or attribute shows up in the schema without a sink change.
+Join example (modules per build outcome):
+`schema=build_modules&join=executed&by=kw.executed.status&measure=kw.build_modules.module_count`.
+
+Responses carry no real install ids; `bucket=install` labels installs `install N` (stable rank), which still
+lets a reader follow one pseudonymous install across queries. A new schema or attribute shows up without a
+sink change.
 
 ## Tests
 
@@ -87,12 +89,11 @@ Client tests: `../client/kw_tele/README.md`. The folder `analysis/` holds a sepa
 
 | path | role |
 |---|---|
-| `collector/` | collector configs (default, and without the privacy filter) |
+| `collector/` | collector config (no filter) |
 | `sink/` | FastAPI app, Dockerfile, tests |
 | `demo/` | end-to-end demo script and mock data |
 | `analysis/` | mock-data plots |
 | `docker-compose.yml` | collector + sink |
 | `data/` | `telemetry.db` (bind mount, git-ignored) |
 
-`client/` in this folder is the older metrics-only prototype (`kw_report_telemetry.py`); the real client is
-`../client/kw_tele`.
+The real client is `../client/kw_tele`.

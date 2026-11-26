@@ -95,7 +95,7 @@ class Stub:
 
     @property
     def url(self):
-        return "http://127.0.0.1:%d/v1/logs" % self.server.server_address[1]
+        return f"http://127.0.0.1:{self.server.server_address[1]}/v1/logs"
 
     def start(self):
         self.thread.start()

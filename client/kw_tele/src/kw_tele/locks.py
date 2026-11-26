@@ -33,6 +33,6 @@ def wait_lock(path, timeout):
                 break
             except BlockingIOError:
                 if time.monotonic() >= give_up:
-                    raise TimeoutError("timed out waiting for %s" % path) from None
+                    raise TimeoutError(f"timed out waiting for {path}") from None
                 time.sleep(_POLL_SECONDS)
         yield

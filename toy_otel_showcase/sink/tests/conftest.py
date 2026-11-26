@@ -20,6 +20,12 @@ def db_path(tmp_path, monkeypatch):
 
 
 @pytest.fixture
+def raw_times(monkeypatch):
+    """Store posted times as sent, for tests about grouping or storage rather than coarsening (D52)."""
+    monkeypatch.setattr(sink_app, "_coarsen_ns", lambda ns: ns)
+
+
+@pytest.fixture
 def client(db_path):
     with TestClient(sink_app.app, raise_server_exceptions=False) as c:
         yield c
@@ -164,3 +170,10 @@ def no_time(rec):
     rec.pop("timeUnixNano", None)
     rec.pop("observedTimeUnixNano", None)
     return rec
+
+
+def get_ok(client, path, **params):
+    """GET path with query params, assert 200, return the decoded JSON body."""
+    r = client.get(path, params=params)
+    assert r.status_code == 200, r.text
+    return r.json()

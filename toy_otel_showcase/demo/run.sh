@@ -69,7 +69,7 @@ export SHOW WORK COLLECTOR_PORT SEED="${SEED:-42}"
 dc()
 {
   env UID="$(id -u)" GID="$(id -g)" SINK_PORT="$SINK_PORT" COLLECTOR_PORT="$COLLECTOR_PORT" \
-    SINK_DATA_DIR="$WORK/data" COLLECTOR_CONFIG="$SHOW/collector/config.no-filter.yaml" \
+    SINK_DATA_DIR="$WORK/data" COLLECTOR_CONFIG="$SHOW/collector/config.yaml" \
     docker compose -p kwdemo --project-directory "$SHOW" "$@"
 }
 cleanup()
@@ -157,7 +157,7 @@ by_role()
   for h in $(homes); do [ "$(role "$h")" = "$1" ] && echo "$h"; done
 }
 
-stage "1. start collector (module-name filter off) + sink: ports sink=$SINK_PORT collector=$COLLECTOR_PORT"
+stage "1. start collector (filters nothing) + sink: ports sink=$SINK_PORT collector=$COLLECTOR_PORT"
 mkdir -p "$WORK/data" "$WORK/bin"
 dc up -d --build --wait > "$WORK/compose.log" 2>&1 || {
   tail -n 20 "$WORK/compose.log"
@@ -202,6 +202,32 @@ check "second upload on every opted-in install: nothing to send, count unchanged
   bash -c '! grep -v "nothing to send" <<<"$1" | grep -q .' _ "$(sed '/^$/d' <<< "$outs")"
 check "sink count unchanged after second upload" test "$(sink_count)" = "$got"
 
+stage "3b. example exclusion (user's per-field choice) and time coarsening"
+XKEY="kw.build_modules.module_names"
+xh=""
+for h in $(homes); do [ -f "$h/exclude_fields.txt" ] && xh="$h" && break; done
+if [ -z "$xh" ]; then
+  fail "example exclusion: no install was given exclude_fields"
+else
+  xid="$(sed -n 's/^instance_id=//p' "$xh/.config/kw/telemetry.config" | head -n 1)"
+  echo "  example exclusion: $(basename "$xh") (service_instance_id $xid) has exclude_fields=$XKEY"
+  check "example exclusion: that install has build_modules records at the sink" \
+    test "$(sqlite3 -readonly "$DB" "SELECT COUNT(*) FROM log_record WHERE service_instance_id='$xid' AND body='build_modules'")" -gt 0
+  check "example exclusion: none of them carries $XKEY" \
+    test "$(sqlite3 -readonly "$DB" "SELECT COUNT(*) FROM log_record WHERE service_instance_id='$xid' AND json_extract(attributes,'\$.\"$XKEY\"') IS NOT NULL")" = 0
+  check "at least one other install has $XKEY at the sink" \
+    test "$(sqlite3 -readonly "$DB" "SELECT COUNT(*) FROM log_record WHERE service_instance_id<>'$xid' AND json_extract(attributes,'\$.\"$XKEY\"') IS NOT NULL")" -gt 0
+fi
+# Week instant: Monday 00:13:00 UTC. 1970-01-01 was a Thursday, so epoch second 345600+780 is the first one.
+bad_times="$(sqlite3 -readonly "$DB" "SELECT COUNT(*) FROM log_record WHERE
+    NOT (COALESCE(time_unix_nano,0)=0 OR ((time_unix_nano/1000000000)-345600)%604800=780)
+    OR NOT (COALESCE(observed_time_unix_nano,0)=0 OR ((observed_time_unix_nano/1000000000)-345600)%604800=780)")"
+check "every stored time_unix_nano / observed_time_unix_nano is 0 or a Monday 00:13:00 UTC week instant ($bad_times not)" test "$bad_times" = 0
+bad_recv="$(sqlite3 -readonly "$DB" "SELECT COUNT(*) FROM log_record WHERE strftime('%w %H:%M:%S', received_at) <> '1 00:13:00'")"
+check "every received_at is a Monday 00:13:00 UTC week instant ($bad_recv not)" test "$bad_recv" = 0
+dup_ids="$(sqlite3 -readonly "$DB" 'SELECT COUNT(*) FROM (SELECT 1 FROM log_record WHERE event_id IS NOT NULL GROUP BY service_instance_id,event_id,body HAVING COUNT(*)>1)')"
+check "no duplicate (service_instance_id, event_id, body) among records with an event id" test "$dup_ids" = 0
+
 stage "4. sink down -> exit 5 -> recovery -> each row once (D23)"
 h="$(by_role in-history | sed -n 3p)"
 (cd "$h/linux" && echo CONFIG_DEMO=m > .config && kw_in "$h" build > /dev/null 2>&1 && kw_in "$h" build > /dev/null 2>&1)
@@ -223,21 +249,24 @@ check "sink holds exactly the sent-marked records, no duplicates" \
 if [ "$SKIP_RETRIEVAL" = 1 ]; then
   stage "5. retrieval: skipped (--skip-retrieval)"
 else
-  stage "5. retrieval through /analysis/schema and /analysis/group"
+  stage "5. retrieval through /analysis/schemas and /analysis/query"
   get()
   {
     curl -fsS --get "$SINK$1" "${@:2}"
   }
-  schema="$(get /analysis/schema)" || fail "GET /analysis/schema"
-  kinds="$(python3 -c 'import json,sys; print(" ".join(k["kind"] for k in json.loads(sys.argv[1])["kinds"]))' "${schema:-$EMPTY}" 2> /dev/null)"
-  check "schema lists executed, build_modules, timebox (got: $kinds)" \
-    bash -c 'for k in executed build_modules timebox; do [[ " $1 " == *" $k "* ]] || exit 1; done' _ "$kinds"
-  check "schema shows kw.build_modules.module_names (collector filter off)" \
-    bash -c 'grep -q "kw.build_modules.module_names" <<<"$1"' _ "$schema"
-  g1="$(get /analysis/group --data-urlencode kind=executed --data-urlencode by=kw.executed.command_label \
-    --data-urlencode measure=kw.executed.elapsed_time_in_secs --data-urlencode bucket=week)" || fail "GET /analysis/group executed"
-  g2="$(get /analysis/group --data-urlencode kind=build_modules --data-urlencode by=kw.build_modules.module_count)" || fail "GET /analysis/group build_modules"
-  g3="$(get /analysis/group --data-urlencode kind=timebox --data-urlencode by=kw.timebox.tag --data-urlencode bucket=day)" || fail "GET /analysis/group timebox"
+  schemas="$(get /analysis/schemas)" || fail "GET /analysis/schemas"
+  names="$(python3 -c 'import json,sys; print(" ".join(k["schema"] for k in json.loads(sys.argv[1])["schemas"]))' "${schemas:-$EMPTY}" 2> /dev/null)"
+  check "schemas lists executed, build_modules, timebox (got: $names)" \
+    bash -c 'for k in executed build_modules timebox; do [[ " $1 " == *" $k "* ]] || exit 1; done' _ "$names"
+  attrs="$(get /analysis/schema/build_modules/attributes)" || fail "GET /analysis/schema/build_modules/attributes"
+  check "build_modules attributes show kw.build_modules.module_names (no filter exists; kw_tele sends it unless the user excludes it)" \
+    bash -c 'grep -q "kw.build_modules.module_names" <<<"$1"' _ "$attrs"
+  g1="$(get /analysis/query --data-urlencode schema=executed --data-urlencode by=kw.executed.command_label \
+    --data-urlencode measure=kw.executed.elapsed_time_in_secs --data-urlencode bucket=week)" || fail "GET /analysis/query executed"
+  g2="$(get /analysis/query --data-urlencode schema=build_modules --data-urlencode by=kw.build_modules.module_count)" || fail "GET /analysis/query build_modules"
+  g3="$(get /analysis/query --data-urlencode schema=timebox --data-urlencode by=kw.timebox.tag --data-urlencode bucket=week)" || fail "GET /analysis/query timebox"
+  g4="$(get /analysis/query --data-urlencode schema=build_modules --data-urlencode join=executed \
+    --data-urlencode by=kw.executed.status --data-urlencode measure=kw.build_modules.module_count)" || fail "GET /analysis/query build_modules join executed"
   sum_records()
   {
     python3 -c 'import json,sys; print(sum(g["records"] for g in json.loads(sys.argv[1])["groups"]))' "${1:-$EMPTY}" 2> /dev/null
@@ -245,15 +274,18 @@ else
   for kind in executed build_modules timebox; do
     case "$kind" in executed) g="$g1" ;; build_modules) g="$g2" ;; *) g="$g3" ;; esac
     want="$(sqlite3 -readonly "$DB" "SELECT COUNT(*) FROM log_record WHERE body='$kind'")"
-    check "group $kind: records sum ($(sum_records "$g")) == sink rows ($want)" test "$(sum_records "$g")" = "$want"
+    check "query $kind: records sum ($(sum_records "$g")) == sink rows ($want)" test "$(sum_records "$g")" = "$want"
   done
+  want="$(sqlite3 -readonly "$DB" "SELECT COUNT(*) FROM log_record WHERE body='build_modules'")"
+  check "modules vs failures (build_modules join executed by status): records sum ($(sum_records "$g4")) == build_modules rows ($want); demo builds all succeed, so only a success group" \
+    bash -c 'python3 -c "import json,sys; g=json.loads(sys.argv[1])[\"groups\"]; s=[x[\"kw.executed.status\"] for x in g]; sys.exit(0 if sum(x[\"records\"] for x in g)==int(sys.argv[2]) and set(s)<={\"success\"} else 1)" "$1" "$2"' _ "$g4" "$want"
   check "executed measure: every record numeric (non_numeric 0, measured == records)" \
     python3 -c 'import json,sys; g=json.loads(sys.argv[1])["groups"]; sys.exit(0 if g and all(x["non_numeric"]==0 and x["measured"]==x["records"] for x in g) else 1)' "$g1"
-  check "responses carry no install ids" bash -c '! grep -q service_instance_id <<<"$1"' _ "$schema$g1$g2$g3"
+  check "responses carry no install ids" bash -c '! grep -q service_instance_id <<<"$1"' _ "$schemas$attrs$g1$g2$g3$g4"
   echo "  executed by command_label (per week), first groups:"
   python3 -c 'import json,sys
 for g in json.loads(sys.argv[1])["groups"][:4]:
-    print("   ", g["bucket"], g["kw.executed.command_label"], "records", g["records"], "installs", g["installs"], "measured", g["measured"], "mean_secs", round(g["mean"], 1))' "${g1:-$EMPTY}" 2> /dev/null
+    print("   ", g["week"], g["kw.executed.command_label"], "records", g["records"], "installs", g["installs"], "measured", g["measured"], "mean_secs", round(g["mean"], 1))' "${g1:-$EMPTY}" 2> /dev/null
 fi
 
 stage "summary"
