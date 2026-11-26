@@ -31,13 +31,13 @@ def utc_ns(date, time_):
 
 def week_instant(epoch):
     """Monday 00:13:00 UTC of the UTC week containing `epoch`; computed independently of kw_tele."""
-    moment = datetime.datetime.fromtimestamp(epoch, datetime.UTC)
+    moment = datetime.datetime.fromtimestamp(epoch, datetime.timezone.utc)
     monday = moment.date() - datetime.timedelta(days=moment.weekday())
     return calendar.timegm(monday.timetuple()) + 13 * 60
 
 
 def week_date(epoch):
-    moment = datetime.datetime.fromtimestamp(epoch, datetime.UTC)
+    moment = datetime.datetime.fromtimestamp(epoch, datetime.timezone.utc)
     return (moment.date() - datetime.timedelta(days=moment.weekday())).isoformat()
 
 

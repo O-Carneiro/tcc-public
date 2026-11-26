@@ -12,7 +12,7 @@ from helpers import constants, kwdb, otlp
 from helpers.cli_case import CliCase
 from helpers.otlp import attrs, records
 
-UTC = datetime.UTC
+UTC = datetime.timezone.utc
 
 
 def epoch(text):
