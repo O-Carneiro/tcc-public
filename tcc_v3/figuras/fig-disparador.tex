@@ -1,0 +1,48 @@
+\begin{tikzpicture}[
+    x=1cm, y=1cm,
+    every node/.style={font=\footnotesize, align=center},
+    passo/.style={draw, rounded corners=3pt, minimum height=0.5cm,
+                  inner sep=1.5pt, fill=white, text width=4.0cm},
+    pergunta/.style={draw, minimum height=0.5cm, inner sep=1.5pt,
+                  fill=black!8, text width=4.4cm},
+    fim/.style={passo, very thick},
+    seta/.style={-{Latex[length=1.6mm]}, semithick},
+    nota/.style={font=\scriptsize, inner sep=1.5pt, fill=white},
+  ]
+  \node[passo] (ini) at (0, 0) {\texttt{kw} \textit{comando}};
+  \node[pergunta] (d1) at (0, -0.8) {o comando é \texttt{telemetry}?};
+  \node[pergunta] (d2) at (0, -1.6) {o kw\_tele está instalado?};
+  \node[pergunta] (d3) at (0, -2.4) {consentimento?};
+  \node[pergunta] (d4) at (0, -3.2) {o comando registra uso?};
+  \node[pergunta] (d5) at (0, -4.0) {passou o tempo mínimo?};
+  \node[pergunta] (d6) at (0, -4.8) {venceu o intervalo de envio?};
+  \node[pergunta] (d7) at (0, -5.6) {há um lote cheio pendente?};
+  \node[fim] (segue) at (0, -6.9) {segue para o comando};
+
+  \node[passo, text width=4.6cm] (ask) at (-5.7, -2.4) {pede o consentimento};
+  \node[passo, text width=4.6cm] (marca) at (-5.7, -5.6) {guarda o instante do disparo};
+  \node[passo, text width=4.6cm] (lanca) at (-5.7, -6.35) {dispara o kw\_tele};
+
+  \draw[seta] (ini) -- (d1);
+  \draw[seta] (d1) -- node[nota, right=2pt] {não} (d2);
+  \draw[seta] (d2) -- node[nota, right=2pt] {sim} (d3);
+  \draw[seta] (d3) -- node[nota, right=2pt] {sim} (d4);
+  \draw[seta] (d4) -- node[nota, right=2pt] {sim} (d5);
+  \draw[seta] (d5) -- node[nota, right=2pt] {sim} (d6);
+  \draw[seta] (d6) -- node[nota, right=2pt] {não} (d7);
+
+  \def\trilho{3.2}
+  \draw[semithick] (d1.east) -- node[nota, above=1pt] {sim} (d1.east -| {(\trilho,0)});
+  \foreach \d in {d2, d3, d4, d5, d7} {
+    \draw[semithick] (\d.east) -- node[nota, above=1pt] {não} (\d.east -| {(\trilho,0)});
+  }
+  \draw[seta] (d1.east -| {(\trilho,0)}) -- (segue.east -| {(\trilho,0)}) -- (segue.east);
+
+  \draw[seta] (d3.west) -- node[nota, above=1pt, pos=0.62] {perguntar} (ask.east);
+  \draw[seta] (ask.west) -- ++(-0.35, 0) |- ([yshift=-3pt]segue.west);
+
+  \draw[seta] (d6.west) -- node[nota, above=1pt] {sim} ([xshift=0.9cm]d6.west -| marca.north) -- ([xshift=0.9cm]marca.north);
+  \draw[seta] (d7.west) -- node[nota, above=1pt] {sim} (marca.east);
+  \draw[seta] (marca) -- (lanca);
+  \draw[seta] (lanca.south) |- ([yshift=3pt]segue.west);
+\end{tikzpicture}

@@ -1,0 +1,52 @@
+\begin{tikzpicture}[
+    x=1cm, y=1cm,
+    every node/.style={font=\footnotesize, align=center},
+    passo/.style={draw, rounded corners=3pt, minimum height=0.7cm,
+                  inner sep=3pt, fill=white, text width=3.6cm},
+    pergunta/.style={draw, minimum height=0.7cm, inner sep=3pt,
+                  fill=black!8, text width=3.6cm},
+    dado/.style={passo, very thick, fill=black!12},
+    fim/.style={passo, very thick},
+    lado/.style={draw, dashed, rounded corners=6pt, inner sep=8pt},
+    rotulo/.style={font=\scriptsize\scshape, anchor=south west},
+    seta/.style={-{Latex[length=1.6mm]}, semithick},
+    volta/.style={-{Latex[length=1.6mm]}, semithick, densely dotted},
+    nota/.style={font=\scriptsize, inner sep=1.5pt},
+  ]
+  \node[passo] (corpo) at (0, 0) {corpo da requisição};
+  \node[passo] (separa) at (0, -1.2) {separa em registros};
+  \node[pergunta] (bom) at (0, -2.4) {o registro está bem formado?};
+  \node[passo] (tempo) at (-2.6, -3.8) {reduz a granularidade do tempo à semana};
+  \node[passo] (dup) at (-2.6, -5.1) {calcula a chave de repetição};
+  \node[passo] (aparte) at (2.6, -4.45) {guarda à parte, com o motivo};
+  \node[dado, text width=4.4cm] (grava) at (0, -6.6) {grava o lote de uma vez, ignorando os repetidos};
+  \node[dado, text width=1.9cm] (sql) at (4.6, -6.6) {banco\\[-1pt]{\scriptsize SQLite}};
+  \node[fim] (ok) at (-2.6, -8.4) {responde sucesso};
+  \node[fim] (erro) at (2.6, -8.4) {responde erro};
+
+  \node[lado, fit=(corpo)(tempo)(aparte)(sql)(ok)(erro)] (back) {};
+  \node[rotulo] at ([yshift=2pt]back.north west) {backend próprio};
+
+  \draw[seta] (corpo) -- (separa);
+  \draw[seta] (separa) -- (bom);
+  \draw[seta] (bom.west) -| node[nota, above, pos=0.25] {sim} (tempo.north);
+  \draw[seta] (bom.east) -| node[nota, above, pos=0.25] {não} (aparte.north);
+  \draw[seta] (tempo) -- (dup);
+  \draw[seta] (dup.south) -- ++(0, -0.45) -| ([xshift=-0.6cm]grava.north);
+  \draw[seta] (aparte.south) -- ++(0, -1.1) -| ([xshift=0.6cm]grava.north);
+  \draw[seta] (grava) -- (sql);
+  \draw[seta] (grava.south) -- ++(0, -0.35) -| node[nota, left, pos=0.75] {gravou} (ok.north);
+  \draw[seta] (grava.south) -- ++(0, -0.35) -| node[nota, right, pos=0.75] {falha de armazenamento} (erro.north);
+
+  \node[passo, text width=2.4cm] (exp) at (-10.2, 0) {exportador\\[-1pt]{\scriptsize OTLP/HTTP}};
+  \node[nota, text width=2.6cm, anchor=north] (repassa) at ([yshift=-0.35cm]exp.south) {a resposta é repassada\\ao kw\_tele};
+  \node[lado, fit=(exp)(repassa)] (col) {};
+  \node[rotulo] at ([yshift=2pt]col.north west) {Collector};
+
+  \draw[seta] ([yshift=4pt]exp.east) -- node[nota, above, pos=0.24, align=center] {POST \texttt{/v1/logs}\\OTLP, JSON} ([yshift=4pt]corpo.west);
+
+  \coordinate (trilho) at ([xshift=-1.0cm]back.west);
+  \draw[volta] (ok.west) -- node[nota, above, pos=0.7] {sucesso} (ok.west -| trilho);
+  \draw[volta] (erro.south) -- ([yshift=-0.35cm]erro.south |- back.south) coordinate (e1) -- node[nota, below, pos=0.5] {erro} (e1 -| trilho);
+  \draw[volta] (e1 -| trilho) |- ([yshift=-4pt]exp.east);
+\end{tikzpicture}

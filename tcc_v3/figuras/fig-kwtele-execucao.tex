@@ -1,0 +1,56 @@
+\begin{tikzpicture}[
+    x=1cm, y=1cm,
+    every node/.style={font=\footnotesize, align=center},
+    passo/.style={draw, rounded corners=3pt, minimum height=0.7cm,
+                  inner sep=3pt, fill=white, text width=4.0cm},
+    pergunta/.style={draw, minimum height=0.7cm, inner sep=3pt,
+                  fill=black!8, text width=4.0cm},
+    fim/.style={passo, very thick, text width=3.9cm},
+    lado/.style={draw, dashed, rounded corners=6pt, inner sep=7pt},
+    rotulo/.style={font=\scriptsize\scshape, anchor=south west},
+    seta/.style={-{Latex[length=1.6mm]}, semithick},
+    rede/.style={-{Latex[length=1.6mm]}, semithick, densely dotted},
+    nota/.style={font=\scriptsize, inner sep=1.5pt},
+  ]
+  \node[passo] (esq) at (0, 0) {lê o esquema da base local};
+  \node[passo] (pend) at (0, -1.3) {lê um lote de\\eventos pendentes};
+  \node[passo] (tempo) at (0, -2.6) {reduz a granularidade do tempo à semana};
+  \node[passo] (excl) at (0, -3.9) {exclui os campos da lista do usuário};
+  \node[passo] (monta) at (0, -5.2) {monta o registro OTLP};
+  \node[passo] (envia) at (0, -6.5) {envia o lote};
+  \node[pergunta] (resp) at (0, -7.8) {resposta?};
+  \node[passo] (marca) at (0, -9.4) {marca o lote como enviado};
+
+  \node[fim] (termina) at (7.0, -1.3) {guarda o estado e termina};
+  \node[fim] (para) at (7.0, -9.4) {para e guarda o estado};
+  \node[passo, text width=3.4cm] (divide) at (-6.0, -7.8)
+    {divide o lote até isolar a linha recusada, que fica pendente};
+
+  \coordinate (vl) at (-8.5, -4.5);
+  \node[lado, fit=(esq)(marca)(termina)(para)(divide)(vl)] (maq) {};
+  \node[rotulo] at ([yshift=2pt]maq.north west) {na máquina de quem usa o kw};
+
+  \node[passo, text width=2.4cm, minimum height=2.0cm] (rec) at (12.0, -7.15)
+    {Collector e\\backend próprio};
+  \node[rotulo] at ([yshift=2pt]rec.north west) {pela rede};
+
+  \draw[seta] (esq) -- (pend);
+  \draw[seta] (pend) -- (tempo);
+  \draw[seta] (tempo) -- (excl);
+  \draw[seta] (excl) -- (monta);
+  \draw[seta] (monta) -- (envia);
+  \draw[seta] (envia) -- (resp);
+  \draw[seta] (pend) -- node[nota, above] {nenhum pendente} (termina);
+
+  \draw[rede] (envia.east) -- (envia.east -| rec.west);
+  \draw[rede] ([yshift=5pt]resp.east -| rec.west) -- node[nota, above, pos=0.3] {resposta} ([yshift=5pt]resp.east);
+
+  \draw[seta] (resp) -- node[nota, right] {aceito} (marca);
+  \draw[seta] (resp.west) -- node[nota, above, align=center] {recusado\\pelo conteúdo} (divide.east);
+  \draw[seta] ([yshift=-5pt]resp.east) -| node[nota, below, pos=0.25] {outra falha} (para.north);
+
+  \def\volta{-8.5}
+  \draw[seta] (marca.west) -- (\volta, -9.4) -- (\volta, -1.3) -- (pend.west);
+  \draw[semithick] (divide.west) -- (\volta, -7.8);
+  \node[nota, rotate=90, below] at (\volta, -4.5) {próximo lote};
+\end{tikzpicture}

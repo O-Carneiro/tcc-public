@@ -1,0 +1,52 @@
+\begin{table}[!ht]
+  \centering
+  \caption{Critérios da escolha: requisitos (C1 a C8) e preferências (C9).}
+  \label{tab:criterios}
+  \footnotesize
+  \begin{tabular}{@{}>{\raggedright\arraybackslash}p{4.6cm}
+                    >{\raggedright\arraybackslash}p{9.6cm}@{}}
+    \toprule
+    Critério & O que exige \\
+    \midrule
+    \multicolumn{2}{@{}l}{\textit{Requisitos}} \\
+    \addlinespace[2pt]
+    C1 Consentimento e filtro por campo
+      & O dado só sai após o opt-in, e a privacidade se aplica
+        campo a campo, no cliente, por configuração, sem mudar código.\\
+    \addlinespace[1pt]
+    C2 Extensibilidade
+      & Uma fonte ou um atributo novo vai do cliente até a consulta sem
+        mudança no protocolo, no Collector nem no backend.\\
+    \addlinespace[1pt]
+    C3 Um registro por evento, com o tempo do evento
+      & Cada evento vai como um registro, com atributos chave e valor livres e
+        o momento em que ocorreu, com granularidade de semana; a agregação fica com o backend.\\
+    \addlinespace[1pt]
+    C4 Cliente em Bash e em Python só com a biblioteca padrão
+      & Sem processo residente nem dependência instalada à parte; cada passo
+        traduzível para \texttt{sqlite3}, \texttt{jq} e \texttt{curl}.\\
+    \addlinespace[1pt]
+    C5 Linux, aberto, auto-hospedável
+      & Roda em Linux, tem código aberto e pode ser hospedado por quem recebe
+        os dados, sem conta em serviço de terceiros.\\
+    \addlinespace[1pt]
+    C6 Custo operacional baixo
+      & Uma máquina, configuração em vez de código de servidor, sem banco ou
+        fila obrigatórios para começar.\\
+    \addlinespace[1pt]
+    C7 Garantia de entrega
+      & Confirmação só depois da gravação no backend; reenvio sem duplicar.\\
+    \addlinespace[1pt]
+    C8 Maturidade e estabilidade
+      & Sinal e protocolo estáveis na especificação, versão fixada e histórico
+        de mudanças incompatíveis conhecido.\\
+    \midrule
+    \multicolumn{2}{@{}l}{\textit{Preferências}} \\
+    \addlinespace[2pt]
+    C9 Reuso de um receptor pronto e amplamente usado
+      & O lado servidor e o tratamento do protocolo vêm prontos e
+        configuráveis, em vez de lidos da especificação e escritos pelo
+        projeto, e o componente tem uso amplo.\\
+    \bottomrule
+  \end{tabular}
+\end{table}

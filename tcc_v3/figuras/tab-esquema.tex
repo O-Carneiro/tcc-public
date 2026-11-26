@@ -1,0 +1,41 @@
+\begin{table}[!ht]
+  \centering
+  \footnotesize
+  \setlength{\tabcolsep}{4pt}
+  \begin{threeparttable}
+    \caption{O que cada propriedade do esquema do kw faz com a exportação e o
+      que foi feito.}
+    \label{tab:esquema}
+    \begin{tabular}{@{}>{\raggedright\arraybackslash}p{4.0cm}
+                      >{\raggedright\arraybackslash}p{3.8cm}
+                      >{\raggedright\arraybackslash}p{6.4cm}@{}}
+      \toprule
+      Propriedade do esquema & Efeito na exportação & O que foi feito \\
+      \midrule
+      identificador por ordem de inserção, sem garantia de não reaproveitamento
+        & um evento novo poderia passar por um já enviado
+        & contornado: a marca confere identificador e conteúdo, e a chave de
+          repetição usa o identificador. Proposta: impedir o reaproveitamento,
+          o que exige recriar a tabela \\
+      \addlinespace
+      data e hora em texto, na hora local, sem fuso
+        & a virada da semana fica incerta
+        & contornado pela granularidade de semana. Proposta: uma coluna com o
+          instante em UTC \\
+      \addlinespace
+      sem versão do esquema
+        & uma coluna nova depende de verificação no ponto de uso
+        & feito o mínimo: uma verificação antes do envio, que só acrescenta o que
+          falta. Proposta: versão do esquema e uma guarda de migração \\
+      \addlinespace
+      sem estado de exportação
+        & reenvio e contagem dupla
+        & feito: uma coluna no evento, com um índice, marca o que foi enviado \\
+      \bottomrule
+    \end{tabular}
+    \begin{tablenotes}
+      \footnotesize
+      \item Justificativas na Seção~\ref{sec:banco-local}.
+    \end{tablenotes}
+  \end{threeparttable}
+\end{table}

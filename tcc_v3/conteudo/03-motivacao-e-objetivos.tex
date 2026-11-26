@@ -4,21 +4,26 @@
 
 \label{cap:motivacao}
 
-\section{Dados de uso como fonte de pesquisa}
+O kw guarda dados de uso numa base bem organizada, mas que não tem por onde
+sair da máquina de quem usa a ferramenta. Este capítulo mostra por que esses
+dados interessam à pesquisa, o que falta para chegarem a quem os estuda e quais
+são os objetivos do trabalho.
+
+\section{Dados de uso e a lacuna de coleta}
 \label{sec:dados-de-uso}
 
-Quem estuda empiricamente como o software é feito costuma partir de dois
-tipos de dado. O primeiro são os artefatos que o trabalho deixa: código,
-\textit{commits}, mensagens nas listas de discussão. \citet{meirelles2010attractiveness},
-por exemplo, analisaram 6.773 projetos de software livre do SourceForge para
-relacionar métricas de código à capacidade de cada projeto de atrair
-usuários e desenvolvedores. O segundo é o que as pessoas contam sobre o
-próprio trabalho, colhido em entrevistas e questionários.
-\citet{dias2021maintainer} entrevistaram 33 mantenedores de projetos como o
-kernel Linux, o Debian e o GitLab, e depois aplicaram um questionário a 90
-contribuidores, para entender o que distingue um bom mantenedor. O
-Capítulo~\ref{cap:kworkflow} já se apoiou nas duas fontes: o estudo de
-\citet{rigby2014peer} minera as listas do kernel, e o de
+Quem estuda empiricamente como o software é feito costuma partir de dois tipos
+de dado. O primeiro são os artefatos que o trabalho deixa: código,
+\textit{commits}, mensagens nas listas de discussão.
+\citet{meirelles2010attractiveness}, por exemplo, analisaram 6.773 projetos de
+software livre do SourceForge para relacionar métricas de código à capacidade
+de cada projeto de atrair usuários e desenvolvedores. O segundo é o que as
+pessoas contam sobre o próprio trabalho, colhido em entrevistas e
+questionários. \citet{dias2021maintainer} entrevistaram 33 mantenedores de
+projetos como o kernel Linux, o Debian e o GitLab, e depois aplicaram um
+questionário a 90 contribuidores, para entender o que distingue um bom
+mantenedor. O Capítulo~\ref{cap:kworkflow} já se apoiou nas duas fontes: o
+estudo de \citet{rigby2014peer} minera as listas do kernel, e o de
 \citet{tadokoro2025sustain} combina observação e questionários.
 
 Cada fonte alcança uma parte do processo. O artefato mostra o que foi
@@ -66,30 +71,26 @@ Seção~\ref{sec:funcionalidades}, e a lista dos autores é de planos, que vão
 mudar à medida que a pesquisa avançar. Os dois artigos dizem o que coletar e
 que modelo seguir, mas não como esses dados saem da máquina do
 desenvolvedor, em que formato e por qual protocolo. Este trabalho trata
-desse como. Não escolhemos quais dados o kw deve coletar, decisão que cabe a
-quem conduz a pesquisa. Propomos o mecanismo que leva os dados para fora, de
+desse como. Ele não escolhe quais dados o kw deve coletar, decisão que cabe a
+quem conduz a pesquisa, e propõe o mecanismo que leva os dados para fora, de
 modo que sirva aos registros de hoje e aceite os de amanhã sem ser refeito.
 
-\section{A lacuna de coleta}
-\label{sec:lacuna}
-
-O kw já registra o próprio uso, guarda os registros num banco bem organizado
-e os lê na mesma máquina (Seções~\ref{sec:funcionalidades}
-e~\ref{sec:base-local}). O que não existe é um caminho para que esses dados
+O que falta é um caminho para que esses dados
 cheguem a quem quer estudá-los. Hoje, um pesquisador que quisesse o uso do kw
 de um grupo de desenvolvedores teria de pedir a cada pessoa que enviasse, à
 mão, o próprio \texttt{kw.db} ou a saída do \texttt{kw report}. Isso não
 escala além de algumas pessoas, produz coletas feitas cada uma de um jeito e
-restringe a amostra a quem se dispõe a responder. A
-saída do \texttt{kw report} perde informação que o banco tem, como o estado de
-cada execução, que o relatório descarta. O banco inteiro vai sem que se possa
-escolher, campo a campo, o que sai. Falta um caminho em que o que é enviado e
-o que é filtrado sejam configuráveis, para que a decisão fique com quem tem de
-tomá-la: os autores do kw, quem conduz a pesquisa e o próprio usuário, ao
-consentir. E mesmo um \textit{script} de exportação escrito para as cinco
-operações de hoje teria de ser refeito a cada ponto de dado novo da lista da
-Seção~\ref{sec:dados-de-uso}. A lacuna, portanto, não é só a falta de uma
-saída, mas a de uma saída que acompanhe a mudança dos dados.
+restringe a amostra a quem se dispõe a responder.
+
+A saída do \texttt{kw report} perde informação que o banco tem, como o estado
+de cada execução, que o relatório descarta. O banco inteiro vai sem que se
+possa escolher, campo a campo, o que sai. Falta um caminho em que o que é
+enviado e o que é filtrado sejam configuráveis, para que a decisão fique com
+quem tem de tomá-la: os autores do kw, quem conduz a pesquisa e o próprio
+usuário, ao consentir. E mesmo um \textit{script} de exportação escrito para
+as cinco operações de hoje teria de ser refeito a cada ponto de dado novo da
+lista dos autores. A lacuna, portanto, não é só a falta de uma saída, mas a de
+uma saída que acompanhe a mudança dos dados.
 
 O problema também não é exclusivo do kw. Cada comando do kw é um processo que
 roda por segundos ou minutos e termina, sem um serviço permanente que possa
@@ -98,7 +99,51 @@ de comando bem maiores, como a cadeia de ferramentas do Go, a interface de
 linha de comando do .NET, o Homebrew e o próprio Debian Popularity Contest,
 enfrentaram a mesma questão de levar dados de uso de máquinas espalhadas para
 um lugar central, cada uma com uma solução diferente
-(Seção~\ref{sec:alternativas}). O kw serve aqui de caso de estudo para um
+(Seção~\ref{sec:precedentes}). O kw serve aqui de caso de estudo para um
 problema que é geral.
 
 \section{Objetivos do trabalho}
+\label{sec:objetivos}
+
+O objetivo geral deste trabalho é projetar e demonstrar um mecanismo
+extensível de coleta de dados de uso para ferramentas de linha de comando de
+vida curta, sem processo residente: os dados registrados na máquina de quem
+usa a ferramenta saem dela só com consentimento e chegam, pelo OpenTelemetry,
+a um repositório central onde são armazenados e consultados para pesquisa. O
+kw é o caso em que o mecanismo é aplicado e demonstrado: escrito em Bash, sem
+dependências pesadas e com registros de uso que já existem.
+
+Os objetivos específicos são:
+\begin{enumerate}
+  \item Justificar a escolha do protocolo e do coletor do OpenTelemetry frente
+    a alternativas, por critérios derivados dos requisitos do
+    Capítulo~\ref{cap:motivacao}.
+  \item Mapear o modelo de dados local do kw (Seção~\ref{sec:base-local}) no
+    modelo de \textit{logs} do OpenTelemetry.
+  \item Identificar o que o esquema atual do kw impede e propor as mudanças
+    mínimas para que os dados saiam de forma incremental e datada.
+  \item Construir e verificar, aplicado ao kw, um sistema de coleta,
+    armazenamento e consulta, e demonstrar sua utilidade com dados simulados.
+  \item Definir as salvaguardas de consentimento e de privacidade, aplicadas
+    no cliente a qualquer dado enviado, e dizer os seus limites.
+  \item Mostrar que uma fonte ou um atributo novo entra sem mudança no
+    protocolo, no coletor, no backend ou na consulta.
+\end{enumerate}
+O primeiro objetivo é tratado no Capítulo~\ref{cap:opentelemetry}; o segundo
+e o terceiro, no Capítulo~\ref{cap:solucao}; o quarto, nos
+Capítulos~\ref{cap:implementacao} e~\ref{cap:validacao}; o quinto, no
+Capítulo~\ref{cap:privacidade}. O sexto é argumentado no
+Capítulo~\ref{cap:solucao} e demonstrado nos Capítulos~\ref{cap:implementacao}
+e~\ref{cap:validacao}.
+
+Fica de fora, antes de tudo, a escolha de quais dados coletar, que a
+Seção~\ref{sec:dados-de-uso} já atribuiu aos autores do kw e a quem conduzir a
+pesquisa; o mecanismo serve a qualquer escolha. O trabalho também não aplica o
+mecanismo a outra ferramenta além do kw. Que ele sirva a outras ferramentas de
+linha de comando é argumentado a partir dos precedentes da
+Seção~\ref{sec:precedentes}, não testado. Nenhum dado real de usuários é
+coletado: as perguntas respondidas com dados simulados no
+Capítulo~\ref{cap:validacao} mostram o que a consulta alcança, não como o kw é
+usado de fato. O trabalho constrói o que torna essa pesquisa possível, sem
+fazê-la. O cronômetro de foco do kw continua fora, como na
+Seção~\ref{sec:funcionalidades}.

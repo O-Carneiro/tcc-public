@@ -1,0 +1,61 @@
+\begin{tikzpicture}[
+    x=1cm, y=1cm,
+    every node/.style={font=\footnotesize},
+    pedido/.style={draw, rounded corners=3pt, inner sep=4pt, fill=black!6, align=center, text width=6.4cm},
+    resp/.style={draw, inner sep=3pt, fill=white},
+    dado/.style={draw, very thick, rounded corners=3pt, fill=black!12, inner sep=5pt, align=center},
+    seta/.style={-{Latex[length=1.6mm]}, semithick},
+    nota/.style={font=\scriptsize, align=center, inner sep=1.5pt},
+  ]
+  \node[pedido, anchor=north] (q1) at (0, 0) {\textbf{que tipos há?}\\[1pt]{\scriptsize\texttt{GET /analysis/schemas}}};
+  \node[resp, anchor=north] (r1) at ([yshift=-0.5cm]q1.south) {%
+    \setlength{\tabcolsep}{4pt}%
+    \begin{tabular}{@{}lrr@{}}
+      \scriptsize\textit{tipo} & registros & instalações \\
+      \hline
+      \texttt{build\_modules} & 112 & 9 \\
+      \texttt{executed}       & 815 & 30 \\
+    \end{tabular}};
+
+  \node[pedido, anchor=north] (q2) at ([yshift=-0.7cm]r1.south) {\textbf{que atributos tem \texttt{executed}?}\\[1pt]
+    {\scriptsize\texttt{GET /analysis/schema/executed/attributes}}};
+  \node[resp, anchor=north] (r2) at ([yshift=-0.5cm]q2.south) {%
+    \setlength{\tabcolsep}{4pt}%
+    \begin{tabular}{@{}lr@{}}
+      \scriptsize\textit{atributo} & registros \\
+      \hline
+      \texttt{kw.event.date}                       & 815 \\
+      \texttt{kw.event.id}                         & 815 \\
+      \texttt{kw.event.kind}                       & 815 \\
+      \texttt{kw.executed.command\_label}          & 815 \\
+      \texttt{kw.executed.elapsed\_time\_in\_secs} & 815 \\
+      \texttt{kw.executed.status}                  & 815 \\
+    \end{tabular}};
+
+  \node[pedido, anchor=north, text width=7.0cm] (q3) at (8.6, 0) {\textbf{quantos módulos tem, em média, uma compilação}\\
+    \textbf{que deu certo e uma que falhou?}\\[1pt]
+    {\scriptsize\texttt{GET /analysis/query?schema=build\_modules}}\\[-1pt]
+    {\scriptsize\texttt{\&join=executed\&by=kw.executed.status}}\\[-1pt]
+    {\scriptsize\texttt{\&measure=kw.build\_modules.module\_count}}};
+  \node[resp, anchor=north] (r3) at ([yshift=-0.5cm]q3.south) {%
+    \setlength{\tabcolsep}{5pt}%
+    \begin{tabular}{@{}lrrr@{}}
+      estado & registros & instalações & módulos (média) \\
+      \hline
+      \texttt{failure} &   8 & 3 & 198 \\
+      \texttt{success} & 104 & 9 & 212 \\
+    \end{tabular}};
+  \node[nota, anchor=north, text width=6.8cm] (j) at ([yshift=-0.15cm]r3.south)
+    {o \texttt{join} junta os registros de tipos diferentes\\que vêm do mesmo evento};
+
+  \node[draw, very thick, rounded corners=3pt, fill=white, inner sep=5pt, minimum width=16.4cm, align=center] (back) at (4.3, -10.0) {backend próprio};
+  \node[dado, minimum width=5.0cm] (db) at (4.3, -11.3) {banco SQLite};
+  \draw[seta] (db.north |- back.south) -- node[nota, right] {lê} (db.north);
+
+  \draw[seta] (q1) -- (r1);
+  \draw[seta] (q2) -- (r2);
+  \draw[seta] (q3) -- (r3);
+  \draw[seta] (back.north -| r2.south) -- node[nota, right] {responde} (r2.south);
+  \draw[seta] (back.north -| r3.south) -- node[nota, right] {responde} (j.south -| r3.south);
+
+\end{tikzpicture}

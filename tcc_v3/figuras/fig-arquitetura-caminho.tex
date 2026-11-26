@@ -1,0 +1,48 @@
+\begin{tikzpicture}[
+    x=1cm, y=1cm,
+    every node/.style={font=\footnotesize, align=center},
+    peca/.style={draw, rounded corners=3pt, minimum width=2.0cm,
+                 minimum height=0.85cm, inner sep=2pt, fill=white},
+    dado/.style={peca, very thick, fill=black!12},
+    lado/.style={draw, dashed, rounded corners=6pt, inner sep=8pt},
+    rotulo/.style={font=\scriptsize\scshape, anchor=south west},
+    seta/.style={-{Latex[length=1.6mm]}, semithick},
+    volta/.style={-{Latex[length=1.6mm]}, semithick, densely dotted},
+    nota/.style={font=\scriptsize, inner sep=1pt},
+  ]
+  \node[peca] (kw) at (0, 2.5) {kw\\[-1pt]{\scriptsize(Bash)}};
+  \node[dado] (db) at (0, 0.6) {base local\\[-1pt]{\scriptsize do kw}};
+  \node[peca] (tele) at (3.4, 0.6) {kw\_tele\\[-1pt]{\scriptsize(Python)}};
+  \node[peca] (cfg) at (3.4, 2.5) {configuração\\[-1pt]{\scriptsize do usuário}};
+
+  \node[peca] (col) at (7.7, 0.6) {Collector};
+  \node[peca, minimum width=1.8cm] (ent) at (10.2, 0.6) {entrada};
+  \node[peca, minimum width=1.8cm] (cons) at (10.2, 2.5) {consulta};
+  \node[draw, very thick, rounded corners=4pt, inner sep=4pt, fit=(ent)(cons)] (back) {};
+  \node[nota, font=\scriptsize\bfseries, anchor=north] at ([yshift=-1pt]back.south) {backend próprio};
+  \node[dado] (sql) at (12.9, 1.55) {banco\\[-1pt]{\scriptsize SQLite}};
+  \node[peca, minimum width=1.7cm] (pesq) at (10.2, 4.1) {usuário};
+
+  \node[lado, fit=(kw)(db)(tele)(cfg)] (maq) {};
+  \coordinate (fundo) at ([yshift=-0.45cm]back.south);
+  \node[lado, fit=(col)(back)(sql)(pesq)(fundo)] (rec) {};
+  \node[rotulo] at ([yshift=2pt]maq.north west) {cliente};
+  \node[rotulo] at ([yshift=2pt]rec.north west) {servidor};
+
+  \path (maq.east) -- coordinate[midway] (fx) (rec.west);
+  \draw[very thick] ([yshift=4pt]fx |- maq.north) -- ([yshift=-4pt]fx |- maq.south)
+    node[below, nota] {fronteira de confiança};
+
+  \draw[seta] (kw) -- node[nota, left] {grava} (db);
+  \draw[seta] (tele) -- node[nota, below] {lê e marca} (db);
+  \draw[seta] (tele) -- node[nota, right] {lê} (cfg);
+
+  \draw[seta] ([yshift=5pt]tele.east) -- ([yshift=5pt]col.west);
+  \draw[seta] ([yshift=5pt]col.east) -- ([yshift=5pt]ent.west);
+  \draw[volta] ([yshift=-5pt]ent.west) -- ([yshift=-5pt]col.east);
+  \draw[volta] ([yshift=-5pt]col.west) -- ([yshift=-5pt]tele.east);
+
+  \draw[seta] (ent.east -| back.east) -- node[nota, below right, inner sep=0.5pt] {grava} (sql.south west);
+  \draw[seta] (cons.east -| back.east) -- node[nota, above right, inner sep=0.5pt] {lê} (sql.north west);
+  \draw[seta] (pesq.south) -- node[nota, right] {consulta} (pesq.south |- back.north);
+\end{tikzpicture}

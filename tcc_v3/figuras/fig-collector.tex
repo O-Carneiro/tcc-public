@@ -1,0 +1,35 @@
+\begin{tikzpicture}[
+    x=1cm, y=1cm,
+    every node/.style={font=\footnotesize, align=center},
+    peca/.style={draw, rounded corners=3pt, minimum height=0.85cm,
+                 inner sep=3pt, fill=white, text width=2.6cm},
+    ausente/.style={draw, densely dotted, rounded corners=3pt, minimum height=0.7cm,
+                 inner sep=3pt, text width=2.6cm, font=\scriptsize},
+    lado/.style={draw, dashed, rounded corners=6pt, inner sep=8pt},
+    rotulo/.style={font=\scriptsize\scshape, anchor=south west},
+    seta/.style={-{Latex[length=1.6mm]}, semithick},
+    volta/.style={-{Latex[length=1.6mm]}, semithick, densely dotted},
+    nota/.style={font=\scriptsize, inner sep=1.5pt},
+  ]
+  \node[peca] (rec) at (0, 0) {receptor\\[-1pt]{\scriptsize OTLP/HTTP}};
+  \node[peca] (mem) at (3.6, 0) {limite de memória};
+  \node[peca] (exp) at (7.2, 0) {exportador\\[-1pt]{\scriptsize OTLP/HTTP}};
+
+  \node[ausente] (a1) at (1.8, -1.7) {sem lote};
+  \node[ausente] (a2) at (5.4, -1.7) {sem fila nem novas tentativas};
+  \node[ausente] (a3) at (3.6, 1.6) {sem filtro por campo};
+
+  \node[lado, fit=(rec)(exp)(a1)(a2)(a3)] (col) {};
+  \node[rotulo] at ([yshift=2pt]col.north west) {Collector};
+
+  \node[nota, anchor=east] (in) at (-2.6, 0) {envio do\\kw\_tele};
+  \node[nota, anchor=west] (out) at (9.8, 0) {envio ao\\backend próprio};
+
+  \draw[seta] (in.east) -- (rec.west);
+  \draw[seta] (rec) -- (mem);
+  \draw[seta] (mem) -- (exp);
+  \draw[seta] (exp.east) -- (out.west);
+
+  \draw[volta] (mem.south) -- ++(0, -0.45) coordinate (m1) -- (m1 -| in.east)
+    node[nota, left, align=right] {recusa passageira:\\as linhas ficam\\pendentes};
+\end{tikzpicture}

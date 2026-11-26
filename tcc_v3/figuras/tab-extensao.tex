@@ -1,0 +1,41 @@
+\begin{table}[!ht]
+  \centering
+  \footnotesize
+  \setlength{\tabcolsep}{4pt}
+  \begin{threeparttable}
+    \caption{O que muda em cada componente quando entra uma fonte nova, como a
+      lista de módulos da compilação. Só o kw muda; a exceção é uma coluna de tempo na tabela nova, que não tem
+      a granularidade reduzida no cliente.}
+    \label{tab:extensao}
+    \begin{tabular}{@{}>{\raggedright\arraybackslash}p{2.4cm}
+                      >{\raggedright\arraybackslash}p{4.6cm}
+                      >{\raggedright\arraybackslash}p{7.2cm}@{}}
+      \toprule
+      Componente & O que muda para uma fonte nova & Por quê \\
+      \midrule
+      kw & uma tabela cuja chave é o identificador do evento, e o código que a preenche
+         & é onde o dado nasce \\
+      \addlinespace[2pt]
+      kw\_tele & nada
+         & descobre no esquema as tabelas que estendem o evento \\
+      \addlinespace[2pt]
+      protocolo & nada
+         & o registro de log carrega atributos livres, e o tipo é um valor do corpo \\
+      \addlinespace[2pt]
+      Collector & nada
+         & não olha os atributos \\
+      \addlinespace[2pt]
+      backend próprio & nada
+         & guarda os atributos juntos, sem uma coluna por atributo \\
+      \addlinespace[2pt]
+      consulta & nada
+         & descobre nos dados os tipos e os atributos, e recebe o nome do
+           atributo como parâmetro \\
+      \bottomrule
+    \end{tabular}
+    \begin{tablenotes}
+      \footnotesize
+      \item Justificativas na Seção~\ref{sec:extensibilidade}.
+    \end{tablenotes}
+  \end{threeparttable}
+\end{table}

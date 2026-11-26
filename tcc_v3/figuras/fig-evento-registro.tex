@@ -1,0 +1,81 @@
+\begin{tikzpicture}[
+    x=1cm, y=1cm,
+    every node/.style={font=\footnotesize},
+    tabela/.style={draw, rectangle split, rectangle split parts=2,
+                   rectangle split part fill={black!12, white},
+                   inner sep=3pt, font=\footnotesize},
+    registro/.style={draw, rectangle split, rectangle split parts=2,
+                   rectangle split part fill={black!6, white},
+                   inner sep=2pt, font=\footnotesize, rounded corners=2pt},
+    recurso/.style={draw, very thick, rounded corners=4pt, inner sep=3pt},
+    coluna/.style={draw, dashed, rounded corners=6pt, inner sep=5pt},
+    rotulo/.style={font=\scriptsize\scshape, anchor=south west},
+    seta/.style={-{Latex[length=1.6mm]}, semithick},
+    nota/.style={font=\footnotesize, align=left, inner sep=1.5pt},
+  ]
+  \providecommand{\kwcolunas}{}\renewcommand{\kwcolunas}[1]{%
+    {\setlength{\tabcolsep}{0pt}\begin{tabular}{@{}l<{\hspace{0.45em}}@{}r@{}}#1\end{tabular}}}
+  \providecommand{\kwcol}{}\renewcommand{\kwcol}[2]{\texttt{#1} & {\scriptsize #2}\\}
+  \providecommand{\kwchave}{}\renewcommand{\kwchave}[2]{\rowcolor{black!12}\texttt{\textbf{#1}} & {\scriptsize\textbf{#2}}\\}
+
+  \node[tabela, anchor=north west] (ev) at (0, 0) {%
+    \texttt{event}
+    \nodepart{two}
+    \kwcolunas{\kwchave{id}{4127}\kwcol{date}{2026-11-19}\kwcol{time}{14:32:07}\kwcol{sent\_at}{---}}};
+
+  \node[tabela, anchor=north west] (ex) at ([yshift=-0.35cm]ev.south west) {%
+    \texttt{executed}
+    \nodepart{two}
+    \kwcolunas{\kwchave{id $\to$ event.id}{4127}\kwcol{command\_label\_id}{3}%
+             \kwcol{elapsed\_time\_in\_secs}{418}\kwcol{status\_id}{1}}};
+
+  \node[tabela, anchor=north west] (bm) at ([yshift=-0.35cm]ex.south west) {%
+    \texttt{build\_modules}
+    \nodepart{two}
+    \kwcolunas{\kwchave{id $\to$ event.id}{4127}\kwcol{module\_count}{3}%
+             \kwcol{module\_names}{\texttt{amdgpu,\dots}}}};
+
+  \node[nota, anchor=north west] (nomes) at ([yshift=-0.2cm]bm.south west) {nomes: \texttt{3} = \texttt{build},
+    \texttt{1} = \texttt{success}};
+
+
+  \node[coluna, fit=(ev)(ex)(bm)(nomes)] (g) {};
+  \node[rotulo] at ([yshift=2pt]g.north west) {geração: o banco do kw};
+
+  \coordinate (tx) at ([xshift=1.0cm]g.east);
+  \node[nota, anchor=west, text width=5.2cm] (t1) at (tx |- ev.center)
+    {data e hora $\to$ instante da semana; a data vira a segunda-feira; hora e marca de envio não saem};
+  \node[nota, anchor=west, text width=5.2cm] (t3) at (tx |- ex.center) {número $\to$ nome, pelas tabelas de nomes};
+  \node[nota, anchor=west, text width=5.2cm] (t4) at (tx |- bm.center)
+    {acha as tabelas de extensão pela chave para \texttt{event.id}; cada linha de extensão vira um registro};
+  \node[nota, anchor=north west, text width=5.2cm] (t5) at ([yshift=-0.25cm]t4.south west)
+    {campos da lista do usuário saem do registro};
+
+  \node[coluna, fit=(t1)(t5), inner sep=6pt] (tr) {};
+  \node[rotulo] at ([yshift=2pt]tr.north west) {transformação: o kw\_tele};
+
+  \draw[seta] (ev.east -| g.east) -- (t1.west);
+  \draw[seta] (ex.east -| g.east) -- (t3.west);
+  \draw[seta] (bm.east -| g.east) -- (t4.west);
+
+  \node[registro, anchor=north west] (r1) at ([yshift=-1.1cm]g.south west) {%
+    registro 1 \quad corpo: \texttt{executed}
+    \nodepart{two}
+    \kwcolunas{\kwcol{kw.event.id}{4127}\kwcol{kw.event.date}{2026-11-16}%
+             \kwcol{kw.event.kind}{executed}%
+             \kwcol{kw.executed.command\_label}{build}%
+             \kwcol{kw.executed.elapsed\_time\_in\_secs}{418}\kwcol{kw.executed.status}{success}}};
+
+  \node[registro, anchor=north west] (r2) at ([xshift=0.15cm]r1.north east) {%
+    registro 2 \quad corpo: \texttt{build\_modules}
+    \nodepart{two}
+    \kwcolunas{\kwcol{kw.event.id}{4127}\kwcol{kw.event.date}{2026-11-16}%
+             \kwcol{kw.event.kind}{build\_modules}%
+             \kwcol{kw.build\_modules.module\_count}{3}%
+             \kwcol{kw.build\_modules.module\_names}{\texttt{amdgpu,\dots}}}};
+
+  \node[recurso, fit=(r1)(r2)] (rq) {};
+  \node[rotulo] at ([yshift=2pt]rq.north west) {trânsito: os registros, sob um só recurso};
+
+  \draw[seta] (tr.south) -- (tr.south |- rq.north);
+\end{tikzpicture}

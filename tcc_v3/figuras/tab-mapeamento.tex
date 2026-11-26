@@ -1,0 +1,54 @@
+\begin{table}[!ht]
+  \centering
+  \footnotesize
+  \setlength{\tabcolsep}{4pt}
+  \begin{threeparttable}
+    \caption{Do evento do kw ao registro OTLP. As colunas de extensão não são
+      fixas: o cliente as descobre no banco do kw a cada execução, e
+      \texttt{executed} e \texttt{build\_modules} são exemplos.}
+    \label{tab:mapeamento}
+    \begin{tabular}{@{}>{\raggedright\arraybackslash}p{4.0cm}
+                      >{\raggedright\arraybackslash}p{5.0cm}
+                      >{\raggedright\arraybackslash}p{5.2cm}@{}}
+      \toprule
+      Origem no kw & Campo no registro OTLP & Tratamento \\
+      \midrule
+      \multicolumn{3}{@{}l}{\textit{Evento}} \\*
+      \addlinespace[1pt]
+      identificador do evento & \texttt{kw.event.id} & direto \\
+      outra coluna do evento & \texttt{kw.event.}\textit{coluna} & direto \\
+      data do evento & \texttt{kw.event.date} & vira a segunda-feira da semana \\
+      hora do evento & --- & não enviada \\
+      marca de envio & --- & não enviada \\
+      data e hora do evento & \texttt{timeUnixNano} & instante da semana \\
+      momento do envio & \texttt{observedTimeUnixNano} & instante da semana \\
+      \midrule
+      \multicolumn{3}{@{}l}{\textit{Extensões (descobertas no banco do kw)}} \\*
+      \addlinespace[1pt]
+      tabela de extensão & \texttt{body} e \texttt{kw.event.kind}
+        & nome da tabela; \texttt{event} quando o evento não tem extensão;
+          um registro por linha de extensão \\
+      coluna da extensão & \texttt{kw.}\textit{tabela}\texttt{.}\textit{coluna} & direto \\
+      coluna que aponta para uma tabela de nomes
+        & \texttt{kw.}\textit{tabela}\texttt{.}\textit{coluna} sem o sufixo \texttt{\_id}
+          (por exemplo, \texttt{kw.executed.command\_label})
+        & o nome, no lugar do número \\
+      \midrule
+      \multicolumn{3}{@{}l}{\textit{Recurso (um por envio)}} \\*
+      \addlinespace[1pt]
+      instalação & \texttt{service.instance.id} & UUID aleatório, criado no opt-in \\
+      kw e cliente
+        & \texttt{service.name}, \texttt{service.version},
+          \texttt{telemetry.sdk.name}, \texttt{.language}, \texttt{.version}
+        & fixos, exceto as versões \\
+      \midrule
+      sem equivalente no kw & \texttt{severityNumber}, \texttt{severityText}
+        & fixos: 9 e \texttt{INFO} \\
+      \bottomrule
+    \end{tabular}
+    \begin{tablenotes}
+      \footnotesize
+      \item Justificativas na Seção~\ref{sec:mapeamento}.
+    \end{tablenotes}
+  \end{threeparttable}
+\end{table}

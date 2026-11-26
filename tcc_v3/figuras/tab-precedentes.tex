@@ -1,0 +1,69 @@
+\begin{table}[!ht]
+  \centering
+  \footnotesize
+  \setlength{\tabcolsep}{4pt}
+  \begin{threeparttable}
+    \caption{Como quatro ferramentas de linha de comando pedem o
+      consentimento, enviam os dados, tratam o envio e identificam a
+      máquina, e como o kw trata os mesmos pontos.}
+    \label{tab:precedentes}
+    \begin{tabular}{@{}>{\raggedright\arraybackslash}p{1.7cm}
+                      >{\raggedright\arraybackslash}p{3.0cm}
+                      >{\raggedright\arraybackslash}p{3.0cm}
+                      >{\raggedright\arraybackslash}p{3.4cm}
+                      >{\raggedright\arraybackslash}p{2.9cm}@{}}
+      \toprule
+      Ferramenta & Consentimento & Como e para onde envia & Estado de envio
+        & Identificador \\
+      \midrule
+      Go
+        & Opt-in: o modo padrão, \texttt{local}, guarda os dados e nunca envia
+        & Relatório semanal em JSON, por POST, para
+          \texttt{telemetry.go.dev}
+        & Após a resposta 200, o relatório vai para a pasta
+          \texttt{upload/}; um erro 4xx o apaga
+        & Nenhum: os relatórios não trazem identificador de nenhum tipo,
+          segundo o design de 2023 \\
+      \addlinespace
+      Debian popcon
+        & Opt-in: a resposta padrão na instalação é ``não''
+        & POST por HTTP para \texttt{popcon.\allowbreak debian.org}
+        & O servidor substitui o envio anterior da mesma máquina pelo novo
+        & UUID aleatório de 128 bits por máquina \\
+      \addlinespace
+      Homebrew
+        & Mostra um aviso antes de ativar e pode ser desligada
+        & \texttt{curl} em processo destacado, por HTTPS, com tempo máximo de
+          3~s
+        & Nenhum estado de envio nem fila própria; as falhas são silenciosas
+        & Nenhum: o envio não traz identificador de usuário nem campo de
+          endereço IP \\
+      \addlinespace
+      CLI do .NET
+        & Ligada por padrão nas distribuições da Microsoft; \mbox{opt-out} por
+          variável de ambiente
+        & Azure Monitor; nas prévias da versão 11, também OTLP, que depende de
+          variável de ambiente a partir da \textit{preview}~5
+        & Na versão 10, anterior ao OpenTelemetry: fila em disco e reenvio
+          quando o erro permite
+        & \textit{Hash} SHA-256 do endereço MAC \\
+      \midrule
+      kw
+        & Opt-in; enquanto não há resposta, o estado é \texttt{ask} e nada é
+          enviado; o usuário pode excluir campos do envio
+          (\texttt{exclude\_fields}), vazio por padrão
+        & Um registro por evento, com o tempo em granularidade de semana, OTLP/HTTP
+          com JSON, em segundo plano, sem bloquear o comando, para um
+          Collector e daí ao backend
+        & Cada evento é marcado como enviado só depois da confirmação do backend
+        & UUID aleatório por instalação, criado no opt-in \\
+      \bottomrule
+    \end{tabular}
+    \begin{tablenotes}
+      \footnotesize
+      \item Justificativas na Seção~\ref{sec:precedentes}. Linha do kw:
+        avaliação deste trabalho sobre o repositório
+        (Capítulo~\ref{cap:solucao}).
+    \end{tablenotes}
+  \end{threeparttable}
+\end{table}

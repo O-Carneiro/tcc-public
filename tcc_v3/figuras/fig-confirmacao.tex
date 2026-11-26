@@ -1,0 +1,40 @@
+\begin{tikzpicture}[
+    x=1cm, y=1cm,
+    every node/.style={font=\footnotesize, align=center},
+    ator/.style={draw, rounded corners=3pt, minimum height=0.7cm, minimum width=2.6cm,
+                 inner sep=3pt, fill=white},
+    dado/.style={ator, very thick, fill=black!12},
+    vida/.style={densely dashed, thin},
+    msg/.style={-{Latex[length=1.6mm]}, semithick},
+    resp/.style={-{Latex[length=1.6mm]}, semithick, densely dotted},
+    nota/.style={font=\scriptsize, inner sep=1.5pt},
+    acao/.style={draw, fill=white, font=\scriptsize, inner sep=2pt, text width=2.4cm},
+    quadro/.style={draw, rounded corners=2pt, inner sep=6pt},
+    etiqueta/.style={draw, fill=white, font=\scriptsize\itshape, inner sep=2pt, anchor=north west},
+  ]
+  \foreach \n/\x/\t in {k/0/kw\_tele, c/4/Collector, b/8/backend próprio} {
+    \node[ator] (\n) at (\x, 0) {\t};
+    \draw[vida] (\n.south) -- (\x, -9.6);
+  }
+  \node[dado] (s) at (12, 0) {banco SQLite};
+  \draw[vida] (s.south) -- (12, -9.6);
+
+  \draw[msg] (0, -1.0) -- node[nota, above] {envia o lote} (4, -1.0);
+  \draw[msg] (4, -1.5) -- node[nota, above] {repassa} (8, -1.5);
+  \draw[msg] (8, -2.0) -- node[nota, above] {grava o lote} (12, -2.0);
+  \draw[resp] (12, -2.5) -- node[nota, above] {gravado} (8, -2.5);
+  \draw[resp] (8, -3.0) -- node[nota, above] {sucesso} (4, -3.0);
+  \draw[resp] (4, -3.5) -- node[nota, above] {sucesso} (0, -3.5);
+  \node[acao, anchor=north] at (0, -3.8) {marca o lote como enviado};
+
+  \draw[msg] (0, -6.0) -- node[nota, above] {envia o lote} (4, -6.0);
+  \draw[msg] (4, -6.5) -- node[nota, above] {repassa} (7.6, -6.5);
+  \node[font=\footnotesize\bfseries] at (7.8, -6.5) {$\times$};
+  \node[nota, right] at (8.1, -6.5) {sem resposta};
+  \draw[resp] (4, -7.1) -- node[nota, above] {erro} (0, -7.1);
+  \node[acao, anchor=north, text width=2.8cm] at (0, -7.4) {não marca; as linhas ficam pendentes e vão na próxima vez};
+  \node[quadro, fit={(-1.6, -5.3) (13.4, -9.3)}] (alt) {};
+  \node[etiqueta] at (alt.north west) {backend parado};
+
+  \node[nota, anchor=west, font=\scriptsize\itshape, fill=white] at (1.5, -4.2) {a marca só vem depois do sucesso};
+\end{tikzpicture}

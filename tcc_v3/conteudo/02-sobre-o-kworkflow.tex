@@ -4,6 +4,11 @@
 
 \label{cap:kworkflow}
 
+O kw só se entende a partir do trabalho que ele automatiza, por isso este
+capítulo começa pelo desenvolvimento do kernel Linux. Depois apresenta a
+ferramenta e termina no dado que o resto do trabalho usa: o registro que o kw
+faz do próprio uso e a base local onde ele fica.
+
 \section{O modelo de desenvolvimento do kernel Linux}
 \label{sec:modelo-kernel}
 
@@ -15,11 +20,7 @@ líquidas ao código; 807 dessas pessoas nunca haviam contribuído antes
 sozinha, e por isso o projeto é dividido em subsistemas. Cada subsistema
 cuida de uma parte do código, como a gerência de memória, a pilha de rede ou
 um conjunto de \textit{drivers}, e tem os próprios mantenedores, a própria
-árvore \textit{git} e a própria lista de e-mail \citep{kerneldocprocess}. O
-arquivo \texttt{MAINTAINERS}, na raiz do código-fonte, registra essa divisão
-e diz a quem cada alteração deve ser enviada. A divisão não é tão limpa quanto
-o arquivo sugere, já que várias entradas se sobrepõem e compartilham código,
-mas ela organiza o trabalho de revisão \citep{tadokoro2025sustain}.
+árvore \textit{git} e a própria lista de e-mail \citep{kerneldocprocess}. 
 
 Uma alteração sobe por uma cadeia de confiança até a \textit{mainline}, a
 árvore mantida por Linus Torvalds e da qual saem as versões oficiais
@@ -29,12 +30,8 @@ mantenedor do subsistema; e o mantenedor do subsistema, no momento certo do
 ciclo, pede a Torvalds que integre a sua árvore à \textit{mainline}, por meio
 de um \textit{pull request}\footnote{Aqui, \textit{pull request} é o pedido
 para que uma árvore \textit{git} seja integrada a outra, e não o recurso de
-mesmo nome do GitHub.}. Torvalds não tem como revisar cada alteração, e confia
-que os níveis de baixo já fizeram esse trabalho. Na prática, a hierarquia é
-mais rasa do que o desenho dá a entender: \citet{corbet2017patchflow}, ao
-analisar o fluxo de \textit{merges} de um ciclo inteiro, observa que
-mantenedores intermediários são raros e que a maioria dos mantenedores envia
-as suas árvores diretamente a Torvalds.
+mesmo nome do GitHub.}. Torvalds não tem como revisar cada alteração e confia
+que os níveis de baixo já fizeram esse trabalho.
 
 \begin{figure}[htbp]
   \centering
@@ -53,39 +50,31 @@ discussão \citep{tadokoro2025sustain}. É na lista que a revisão acontece. Os
 mantenedores e outros desenvolvedores respondem ao e-mail com comentários, o
 autor corrige e reenvia uma nova versão, e o ciclo se repete até que o
 \textit{patch} seja aceito ou abandonado \citep{kerneldocprocess}. Toda essa
-troca fica pública. O \textit{lore.kernel.org}\footnote{\url{https://lore.kernel.org}}
-arquiva a maior parte das listas do kernel e permite consultá-las sem
-assinatura e até sem conta de e-mail, de modo que qualquer pessoa pode ler a
-discussão de um \textit{patch} do envio ao aceite \citep{lorekernel,
-tadokoro2023lore}. A maioria dos projetos de software livre de hoje faz a
-revisão em plataformas como GitHub ou GitLab; o kernel mantém o fluxo por
-e-mail, com regras rígidas de formatação, de assunto e de destinatários.
+troca fica pública e arquivada no
+\textit{lore.kernel.org}\footnote{\url{https://lore.kernel.org}}, onde
+qualquer pessoa pode ler a discussão de um \textit{patch} do envio ao aceite
+\citep{lorekernel, tadokoro2023lore}.
 
-O ritmo das versões é quase fixo. Cada ciclo começa com uma janela de
-mesclagem (\textit{merge window}) de cerca de duas semanas, em que os
-mantenedores enviam a Torvalds tudo o que acumularam e testaram desde o ciclo
-anterior. Ao fim da janela sai a primeira versão candidata, a \texttt{-rc1},
-e nas semanas seguintes só entram correções, até que a versão final seja
-lançada \citep{kerneldocprocess}. A versão lançada continua recebendo
-correções enquanto o ciclo seguinte já está em andamento, o que
-\citet{feitelson2012perpetual} chama de desenvolvimento perpétuo. Para quem
-contribui, isso significa que os subsistemas aceitam \textit{patches} o tempo
-todo, mas que cada um deles só chega à \textit{mainline} no ritmo dos ciclos.
+O ritmo das versões é quase fixo: cada ciclo abre com uma janela de cerca de
+duas semanas em que os mantenedores enviam a Torvalds o que acumularam, e
+segue só com correções até a versão final \citep{kerneldocprocess}. Os
+subsistemas aceitam \textit{patches} o tempo todo, mas cada um só chega à
+\textit{mainline} no ritmo dos ciclos.
 
-O modelo funciona há mais de trinta anos, mas tem custos. Entre as versões 3.19
-(2015) e 6.13 (2025), o código e o número de mantenedores cresceram de forma
-constante, enquanto o volume de \textit{commits} por ciclo oscilou sem
-tendência de alta \citep{tadokoro2025sustain}. Os próprios autores advertem
-que número de \textit{commits} não mede esforço, mas o dado sugere que mais
-mantenedores não se traduziram em mais vazão. Parte das contribuições nem
-chega a ser revisada: no estudo de \citet{rigby2014peer} sobre as listas do
-kernel entre 2005 e 2008, 44\% dos \textit{patches} enviados não receberam
-nenhuma resposta. O problema não diminuiu com o tempo. Ao comentar a chegada
-recorde de novos desenvolvedores na versão 7.3, \citet{corbet2026stats73}
-escreve que os mantenedores já estão perdendo a capacidade de acompanhar o
-fluxo. A conclusão de \citet{corbet2017lfreport} continua valendo: sem as
-ferramentas certas, um projeto do tamanho do kernel não conseguiria funcionar
-sem desabar sob o próprio peso.
+O modelo funciona há mais de trinta anos, mas tem custos. Entre as versões
+3.19 (2015) e 6.13 (2025), o código e o número de mantenedores cresceram de
+forma constante, enquanto o volume de \textit{commits} por ciclo oscilou sem
+tendência de alta \citep{tadokoro2025sustain}. Número de \textit{commits} não
+mede esforço, advertem os autores, mas o dado sugere que mais mantenedores não
+se traduziram em mais vazão. Parte das contribuições nem chega a ser revisada:
+no estudo de \citet{rigby2014peer} sobre as listas do kernel entre 2005 e
+2008, 44\% dos \textit{patches} enviados não receberam discussão de revisão. O
+problema não diminuiu com o tempo. Ao comentar a chegada recorde de novos
+desenvolvedores na versão 7.3, \citet{corbet2026stats73} escreve que os
+mantenedores já estão perdendo a capacidade de acompanhar o fluxo. A conclusão
+de \citet{corbet2017lfreport} continua valendo: sem as ferramentas certas, um
+projeto do tamanho do kernel não conseguiria funcionar sem desabar sob o
+próprio peso.
 
 \begin{figure}[htbp]
   \centering
@@ -102,12 +91,10 @@ Uma parte desse custo cai sobre o desenvolvedor antes mesmo de o
 compilar o kernel, instalá-lo numa máquina de teste, verificar se a máquina
 inicializa e se os testes passam, e só então preparar e enviar o
 \textit{patch}. Cada falha o leva de volta à implementação. Nenhuma dessas
-etapas é trivial no kernel: o mesmo código compila para dezenas de
-arquiteturas e com mais de uma \textit{toolchain}, uma compilação completa
-pode levar de minutos a horas, e a máquina de teste pode ser uma máquina
-virtual, um computador na rede ou o próprio computador do desenvolvedor
-\citep{tadokoro2025kw}. Para cada etapa existe uma ferramenta: o
-\texttt{make}, os \textit{scripts} \texttt{checkpatch.pl} e
+etapas é trivial no kernel: uma compilação completa pode levar de minutos a
+horas, e a máquina de teste pode ser virtual, remota ou o próprio computador
+do desenvolvedor \citep{tadokoro2025kw}. Para cada etapa existe uma
+ferramenta: o \texttt{make}, os \textit{scripts} \texttt{checkpatch.pl} e
 \texttt{get\_maintainer.pl} que acompanham o código-fonte, o \texttt{git
 send-email}, o QEMU. Elas resolvem cada uma a sua parte, e juntá-las num fluxo
 de trabalho fica a cargo de cada desenvolvedor, em geral com \textit{scripts}
@@ -121,14 +108,13 @@ O kworkflow (kw) é uma ferramenta de software livre, distribuída sob a GPL
 versão~2 e escrita em Bash, que reúne numa só interface de linha de comando as
 tarefas descritas na seção anterior. O projeto resume o propósito numa frase:
 reduzir o custo de preparação do ambiente para quem trabalha com o kernel
-Linux e oferecer ferramentas para as tarefas do dia a dia\footnote{No
-original: \enquote{kw has a simple mission: reduce the setup overhead of
-working with the Linux kernel and provide tools to support developers in their
-daily tasks}.} \citep{kworkflowrepo}. \citet{tadokoro2025kw} o classificam
-como um \textit{Developer Automation Workflow System} (DAWS), termo que
+Linux e oferecer ferramentas para as tarefas do dia a dia
+\citep{kworkflowrepo}. \citet{tadokoro2025kw} o classificam como um
+\textit{Developer Automation Workflow System} (DAWS), termo que
 \citet{tadokoro2023lore} propôs com a comunidade do projeto por analogia a
 \textit{Version Control System}: assim como um sistema de controle de versão
-cuida do histórico do código, um DAWS cuida do fluxo de trabalho em volta dele.
+cuida do histórico do código, um DAWS cuida do fluxo de trabalho em volta
+dele.
 
 Todos os comandos seguem a forma \texttt{kw <comando> <opções>}, e o projeto
 tem hoje duas dezenas deles \citep{tadokoro2025kw}. Eles se dividem em dois
@@ -144,25 +130,7 @@ núcleos e uma \textit{flag} de compilação, exige uma linha de \texttt{make}
 com quatro parâmetros; depois de configurado uma vez, o kw reduz isso a
 \texttt{kw build} \citep{tadokoro2025kw}.
 
-\begin{table}[htbp]
-  \centering
-  \caption{Alguns comandos do kworkflow. Seleção a partir da lista completa de
-    \citet{tadokoro2025kw}.}
-  \label{tab:comandos-kw}
-  \begin{tabular}{@{}lll@{}}
-    \toprule
-    Comando & Tipo & O que faz \\
-    \midrule
-    \texttt{build}                 & prático  & compila o kernel e os módulos \\
-    \texttt{deploy}                & prático  & instala o kernel numa máquina de teste \\
-    \texttt{kernel-config-manager} & prático  & gerencia arquivos \texttt{.config} \\
-    \texttt{send-patch}            & indireto & envia \textit{patches} por e-mail \\
-    \texttt{patch-hub}             & indireto & navega pelos \textit{patches} do \textit{lore.kernel.org} \\
-    \texttt{pomodoro}              & indireto & cronometra sessões de trabalho \\
-    \texttt{report}                & indireto & mostra estatísticas de uso \\
-    \bottomrule
-  \end{tabular}
-\end{table}
+\input{figuras/tab-comandos-kw}
 
 Por dentro, o kw é organizado como um \textit{hub}
 (Figura~\ref{fig:arquitetura-kw}). Um único ponto de entrada, o arquivo
@@ -287,7 +255,9 @@ Todos esses registros ficam num único arquivo SQLite, o \texttt{kw.db}, no
 diretório de dados do usuário. O kw o acessa pela linha de comando do
 \texttt{sqlite3}, sem precisar de outra linguagem além do Bash, e esse foi o
 critério que levou \citet{neto2022kw} a escolher o SQLite quando o banco foi
-criado. O esquema trata cada uso do kw como um evento ocorrido numa data e
+criado.
+
+O esquema trata cada uso do kw como um evento ocorrido numa data e
 hora \citep{neto2022kw}. A tabela \texttt{event} guarda essa data e hora, e a
 tabela \texttt{executed} a estende, com a mesma chave, para dizer qual
 operação rodou, quanto tempo levou e em que estado terminou; os nomes das
@@ -310,10 +280,12 @@ duração) são tudo o que se sabe de cada execução.
   \label{fig:esquema-kw}
 \end{figure}
 
-O desenho serve bem ao que foi feito para servir: o esquema é normalizado,
+O design serve bem ao que foi feito para servir: o esquema é normalizado,
 fácil de consultar e tem um único ponto de escrita. Três propriedades dele,
 no entanto, só fazem diferença quando os dados precisam sair da máquina, e as
-três voltam no Capítulo~\ref{cap:solucao}. A primeira é que o identificador
+três voltam no Capítulo~\ref{cap:solucao}.
+
+A primeira é que o identificador
 de cada evento cresce na ordem de inserção, o que permite saber o que já foi
 lido; como a coluna não é declarada com \texttt{AUTOINCREMENT}, o SQLite pode
 reaproveitar o identificador de um evento apagado, embora nenhum código do kw

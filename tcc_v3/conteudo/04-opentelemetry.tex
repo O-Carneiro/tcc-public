@@ -1,0 +1,314 @@
+%!TeX root=../main.tex
+
+\chapter{A escolha do OpenTelemetry}
+
+\label{cap:opentelemetry}
+
+O caminho que falta ao kw tem um componente central, o OpenTelemetry. Este
+capítulo explica o que ele é e justifica a escolha, comparando-o com
+alternativas e com o que outras ferramentas de linha de comando fizeram, antes
+que o Capítulo~\ref{cap:solucao} mostre como ele é usado.
+
+\section{O que é o OpenTelemetry}
+\label{sec:otel-o-que-e}
+
+Instrumentar um programa para emitir dados de telemetria costuma amarrar o
+código à ferramenta de análise que recebe esses dados, porque o formato e o
+protocolo são os dela. O OpenTelemetry existe para desfazer esse laço. É um
+arcabouço de observabilidade, com ferramentas para gerar, exportar e coletar
+dados de telemetria como \textit{traces}, métricas e \textit{logs}, e se
+declara independente de fornecedor e de ferramenta: o mesmo dado pode ir para
+ferramentas diferentes \citep{otel_what_is}. O projeto surgiu em 2019 da fusão
+de dois projetos anteriores, o OpenTracing e o OpenCensus, e entrou na Cloud
+Native Computing Foundation (CNCF) no estágio inicial, o \textit{sandbox}
+\citep{cncf_otel_history_2019}. Em maio de 2026 chegou ao nível
+\textit{graduated} \citep{cncf_otel_project}, que o processo da fundação
+descreve como o ápice da maturidade de um projeto
+\citep{cncf_project_lifecycle}.
+
+O resto do capítulo usa quatro conceitos, apresentados na ordem em que o dado
+anda:
+\begin{itemize}
+  \item \emph{Sinais}: os tipos de dado que o projeto define, isto é,
+    \textit{traces}, que mostram o que acontece quando uma requisição é feita,
+    métricas, que são medições tomadas durante a execução, e \textit{logs},
+    registros de eventos com carimbo de tempo e metadados opcionais
+    \citep{otel_signals}, cada um com o próprio estado de estabilidade (o
+    protocolo é estável para os três, e o sinal de \textit{profiles} segue em
+    desenvolvimento) \citep{otlp_spec_1_11_1}.
+  \item \emph{OTLP}: o protocolo que leva qualquer sinal de quem o emite a
+    quem o recebe, com dois transportes, gRPC e HTTP; no HTTP, o corpo da
+    requisição pode ser protobuf binário ou JSON \citep{otlp_spec_1_11_1}.
+  \item \emph{Collector}: um programa pronto que recebe dados de telemetria,
+    os processa e os envia a um ou mais sistemas de armazenamento ou análise, organizado em
+    \textit{pipelines} de \textit{receivers}, que recebem o dado,
+    \textit{processors}, opcionais, que o transformam, e \textit{exporters},
+    que o mandam para fora do Collector \citep{otel_collector_architecture}.
+  \item \emph{SDKs}: bibliotecas que um programa usa para produzir e exportar
+    sinais, uma para cada linguagem atendida, como a de Python
+    \citep{otel_python_docs}.
+\end{itemize}
+
+Protocolo e SDK são componentes separáveis. A especificação do OTLP define o que
+trafega na rede: no transporte HTTP, o cliente envia os dados numa requisição
+POST \citep{otlp_spec_1_11_1}. Qualquer programa que monte a mensagem e a
+envie fala OTLP, com SDK ou sem ele. Assim, a escolha de quem recebe os dados,
+o Collector, fica separada da escolha de como enviá-los, e as seções seguintes
+tratam de cada uma à parte.
+
+\section{Critérios de escolha}
+\label{sec:criterios}
+
+O motivo central da escolha é o Collector. Ele é um receptor pronto, que já
+servia ao caso e se monta por configuração, a partir de \textit{receivers},
+\textit{processors} e \textit{exporters} que já existem
+\citep{otel_collector_architecture}; o receptor de OTLP e o exportador por
+HTTP são componentes estáveis para \textit{logs} na versão usada
+\citep{otel_collector_v0_121_0}. Sem ele, seria preciso ler a especificação e
+escrever o servidor e o tratamento do protocolo. O segundo motivo é o uso
+amplo. Plataformas de análise de vários fornecedores recebem OTLP, como o
+Sentry, o PostHog, o Datadog e o New Relic \citep{sentry_otlp, posthog_logs,
+datadog_otlp_agent, newrelic_otlp}, de modo que o dado coletado não fica preso
+à plataforma escolhida hoje. A maturidade é um ponto distinto, atestado pelo
+nível \textit{graduated} da CNCF \citep{cncf_otel_project}.
+
+Do OpenTelemetry, o trabalho usa só o OTLP sobre HTTP e um Collector
+configurado, sem SDK. Quem envia precisa apenas de uma requisição HTTP com
+corpo JSON, que um programa feito só com a biblioteca padrão do Python monta.
+Do lado do servidor, o Collector assume o receptor voltado aos clientes e o
+limite de memória, por configuração, sem código de servidor. Sobra um backend
+próprio, pequeno, que entende uma parte do OTLP: recebe o corpo que o Collector
+reenvia, separa os registros e põe à parte os malformados, descarta os
+repetidos, grava num banco SQLite e confirma. O Capítulo~\ref{cap:solucao}
+mostra como o Collector e o backend foram montados.
+
+Os critérios da Tabela~\ref{tab:criterios}, de C1 a C9, vêm dos requisitos dos
+Capítulos~\ref{cap:kworkflow} e~\ref{cap:motivacao} e de requisitos de
+engenharia, e foram fixados antes de olhar as alternativas. O
+OpenTelemetry, porém, não entrou na comparação como um candidato entre
+outros. Ele era a hipótese de partida, por causa do reuso do Collector, e a
+comparação serviu para conferir se a hipótese se sustentava contra os
+critérios.
+
+\input{figuras/tab-criterios}
+
+\section{Alternativas consideradas}
+\label{sec:alternativas}
+
+A comparação põe o OpenTelemetry ao lado de três outras formas de montar o
+caminho inteiro, do cliente ao backend: não reusar nada e escrever um
+receptor próprio, usar um sistema de métricas, ou usar uma plataforma de
+análise pronta. Cada uma representa um grupo; outras opções examinadas
+ficaram de fora, e a lista não é exaustiva. Aqui se pergunta por que o
+OpenTelemetry. Como ele é usado, com que sinal, que cliente e que
+codificação, é escolha do Capítulo~\ref{cap:solucao}. Os critérios estão na
+Tabela~\ref{tab:criterios}, e a parte seguinte explica as avaliações de cada
+alternativa, resumidas na Tabela~\ref{tab:alternativas}, ao fim da seção. As
+ressalvas do próprio OpenTelemetry ficam para a Seção~\ref{sec:limites-otel}.
+
+
+A primeira alternativa é um \textbf{servidor HTTP próprio}, que recebesse JSON
+no formato que o kw quisesse. É o caminho mais curto no começo e, no papel,
+atende quase todos os critérios. Tem também vantagens sobre a escolha: a
+superfície é menor, sem Collector e sem as regras do JSON do OTLP, e o
+contrato de erro é do projeto. Seu custo está no C9: seria preciso escrever o
+receptor, a validação e os limites, e manter um formato que nenhuma outra
+ferramenta lê; na prática, é o backend próprio deste trabalho sem o Collector
+na frente. Pelo mesmo motivo, a operação e as regras de sucesso e de
+retentativa (C6 e C7) seriam código do projeto. A maturidade (C8) também é uma
+ressalva: um componente escrito e mantido pelo próprio projeto começa sem
+histórico que permita julgá-lo maduro, e chegar lá pediria trabalho que vai
+além do código, como formar e manter uma comunidade em torno dele. Essa linha
+da tabela é avaliação deste trabalho, sem fonte externa.
+
+O Kieker, uma
+ferramenta de monitoramento com formato de registro próprio, mostra o que
+acontece quando se quer reusar outra ferramenta: para alimentar o ExplorViz,
+de visualização, foi preciso transformar os seus registros de fluxo de
+controle em \textit{traces} do OpenTelemetry, exportados por gRPC ou Zipkin
+\citep{reichelt2024kieker}. Ler essa ponte como um custo do formato próprio é
+interpretação deste trabalho, não do artigo.
+
+A segunda alternativa é o \textbf{Prometheus com o Pushgateway}. O Prometheus
+coleta métricas puxando-as dos processos monitorados, por HTTP, e a visão
+geral do projeto indica um intermediário, o Pushgateway, para trabalhos de
+vida curta \citep{prometheus_overview}, e um comando do kw, na leitura deste
+trabalho, é desse tipo. A documentação, porém, aponta dois problemas. O
+Pushgateway recusa envios que tragam carimbo de tempo, de modo que o momento
+do evento se perde (C3) \citep{pushgateway_readme}. Além disso, a documentação
+diz que o uso válido do Pushgateway é, em geral, guardar o resultado de um
+trabalho em lote de um serviço, e que ele nunca esquece as séries recebidas
+\citep{prometheus_pushing}, o que sugere que muitas instalações independentes,
+cada uma com seus eventos, não são o caso previsto; e, como cada atributo novo
+vira um rótulo novo e cria séries novas, uma fonte nova pesa sobre esse
+acúmulo (C2).
+
+No Pushgateway, as métricas ficam agrupadas por uma chave, e um envio por PUT
+substitui todas as métricas do grupo \citep{pushgateway_readme}, então o
+cliente teria de reenviar o estado do grupo, não só os eventos novos (C4). O
+filtro de rótulos fica no Prometheus que coleta, depois que o dado chegou
+inteiro ao Pushgateway (C1) \citep{prometheus_config_v3_16_0}. O Pushgateway
+não guarda os dados em disco por padrão \citep{pushgateway_readme}, e nada
+nele confirma que um envio foi gravado pelo Prometheus que o coleta (C7). São,
+por fim, dois serviços a operar (C6).
+
+A terceira alternativa é uma plataforma de análise de produto, o
+\textbf{PostHog}, que substituiria o caminho inteiro, do recebimento à
+consulta. É código aberto, sob a licença MIT fora do diretório \texttt{ee/}
+(C5) \citep{posthog_license}, e aceita eventos por uma API própria e
+\textit{logs} por OTLP \citep{posthog_capture, posthog_logs}; escolher OTLP,
+portanto, não fecha a porta a uma plataforma como essa. Seu ponto forte é o
+que o C9 pede: o armazenamento e a consulta vêm prontos, com mais recursos que
+os do backend próprio.
+
+O PostHog também filtra propriedades dos eventos
+imediatamente antes de gravá-los \citep{posthog_realtime_transformations}, mas
+no servidor, depois do envio. Nas páginas consultadas, nenhuma diz se esse
+recurso funciona na instalação própria, e a lista do que se perde ao hospedar
+o PostHog por conta própria inclui os \textit{data pipelines}, seção onde ele
+está documentado \citep{posthog_selfhost_disclaimer}. A API de captura exige
+um identificador da pessoa em cada evento, enquanto o kw usaria só um
+identificador aleatório de instalação (C1), e responde 200 mesmo a eventos que
+não grava \citep{posthog_capture}; só a versão mais nova da API diz, evento a
+evento, o que foi gravado (C7) \citep{posthog_capture_v1}. Contra ele pesa o custo
+de operação (C6): a instalação própria pede o equivalente a uma máquina com
+4 vCPU e 16~GB de memória \citep{posthog_selfhost}, para uma escala de cerca
+de um envio por instalação por dia (Capítulo~\ref{cap:solucao}), e não tem
+suporte oficial (C8) \citep{posthog_selfhost}.
+
+\input{figuras/tab-alternativas}
+
+\section{Precedentes em ferramentas de linha de comando}
+\label{sec:precedentes}
+
+O Capítulo~\ref{cap:motivacao} citou quatro ferramentas que já enfrentaram a
+questão do kw: a cadeia de ferramentas do Go, o Debian Popularity Contest
+(popcon), o Homebrew e a interface de linha de comando do .NET. Todas rodam
+como processos curtos na máquina de quem as usa, sem um serviço próprio sempre
+ligado, e precisam levar dados de muitas máquinas para um lugar central. Aqui
+interessa como cada uma pede consentimento, envia, guarda o estado do envio e
+identifica a máquina, não o que coleta, que não é critério para o kw. A
+Tabela~\ref{tab:precedentes}, ao fim da seção, resume as quatro e, na última
+linha, como o kw trata cada um desses pontos.
+
+A cadeia de ferramentas do \textbf{Go} guarda contadores na máquina,
+agrega-os em relatórios semanais e, por padrão, nunca os envia
+\citep{go_telemetry_doc}. O design
+publicado por Russ Cox em fevereiro de 2023 era opt-out
+\citep{cox_telemetry_design_2023}; dezesseis dias depois, após debate público,
+passou a opt-in \citep{coxsw2023optin}, e é assim que a telemetria saiu no
+Go 1.23 \citep{go_release_1_23}. Os relatórios enviados, diz o design, não
+incluem identificador de nenhum tipo
+\citep{cox_telemetry_design_2023}. O relatório vai por POST, em JSON; só
+depois de uma resposta 200 sai da fila local, e uma resposta 4xx o descarta
+\citep{golang_telemetry}. Na discussão pública do design, Cox disse entender
+o OpenTelemetry como organizado em torno de um fluxo de eventos e escreveu
+que evitar esse fluxo é uma das formas de reduzir o impacto sobre a
+privacidade. Um desenvolvedor do OpenTelemetry concordou, disse que o SDK de
+Go poderia ser adaptado, mas que não valia o esforço, e que o OpenTelemetry
+poderia ser um bom lugar para uma telemetria assim
+\citep{go_discussion_58409}.
+
+O \textbf{popcon} coleta dados de uso para orientar o próprio projeto, e o
+artigo do kw já o toma como referência (Seção~\ref{sec:dados-de-uso}). A
+participação é opt-in, com \enquote{não} como resposta padrão na instalação.
+Cada máquina recebe um identificador aleatório de 128 bits, e um novo envio
+sobrescreve o último de mesmo identificador; o servidor publica todo dia um
+resumo que junta os envios e não traz os identificadores
+\citep{popcon_package_1_78}. O próprio popcon avisa que nenhum envio é
+completamente anônimo \citep{popcon_package_1_78}, ponto que o
+Capítulo~\ref{cap:privacidade} retoma.
+
+O \textbf{Homebrew} mostra um aviso antes de ativar a coleta, que pode ser
+desligada, e a carga não tem identificador de usuário nem campo de endereço IP
+\citep{brew_analytics}. O envio é um \texttt{curl} por HTTPS em processo
+destacado, com tempo máximo de 3 segundos \citep{brew_analytics_code}, para
+não atrasar o comando. As falhas são silenciosas \citep{brew_analytics}, e não
+há fila nem estado de envio em disco \citep{brew_analytics_code}.
+
+A \textbf{interface de linha de comando do .NET} é a única das quatro que adota o
+OpenTelemetry, e ainda só no ramo principal e em versões de prévia. A troca
+entrou em abril de 2026 \citep{dotnet_sdk_pr_53181} e está nas prévias 11.x a
+partir da quarta; desde a quinta, o envio por OTLP depende de uma variável de
+ambiente \citep{dotnet_sdk_telemetryclient_rc3}. As versões estáveis 10.x
+ainda usam o cliente anterior, que guarda os envios numa fila em disco e os
+reenvia quando o erro permite \citep{dotnet_sdk_v10_0_404}. A telemetria é
+opt-out, ligada por padrão nas distribuições da Microsoft e desligável por
+variável de ambiente; o identificador da máquina é o SHA-256 do endereço MAC,
+e os agregados são publicados sob licença Creative Commons
+\citep{dotnet_cli_telemetry}. É, portanto, um projeto grande da mesma
+categoria levando a sua telemetria para o OpenTelemetry, ainda fora das
+versões estáveis, e usando o SDK, que na plataforma .NET é nativo.
+
+O \textbf{kw} usa o opt-in, como o Go e o popcon, um identificador aleatório
+de instalação, como o popcon, e o envio em segundo plano, sem bloquear o
+comando, como o Homebrew. Ele se afasta do Go na forma como os dados são
+agregados. No Go, a agregação acontece no cliente, e só o relatório semanal,
+já resumido, sai da máquina. No kw, cada evento sai como um registro, e as
+agregações são feitas no backend, por consulta, o que deixa qualquer atributo
+novo disponível para agrupar sem mudar o cliente (Capítulo~\ref{cap:solucao});
+o custo dessa escolha está na Seção~\ref{sec:limites-otel}. Ao contrário do
+Homebrew, o kw só marca um registro como enviado depois da confirmação do
+backend. Ao contrário do .NET, não envia nada antes do opt-in, não deriva o
+identificador de um dado da máquina e, escrito em Bash, não usa SDK.
+
+\input{figuras/tab-precedentes}
+
+\section{Limites da escolha}
+\label{sec:limites-otel}
+
+Reusar o OpenTelemetry tem um preço, e o primeiro está no Collector, que está
+na versão 0.x; e a política de versões do projeto avisa que, nessa faixa, nada
+é garantido estável \citep{otel_collector_v0_121_0}. O receptor de OTLP e o
+exportador por HTTP, por onde o dado entra e sai, são estáveis para
+\textit{logs}; os três \textit{processors} do caminho, o de limite de memória,
+o de recurso e o de atributos, estão em beta. As mudanças incompatíveis das
+versões 0.119.0 a 0.121.0, esta última a usada, não tocaram nenhum desses
+componentes \citep{otel_collector_v0_121_0}. O Collector é também mais um
+serviço a operar, ao lado do backend (C6). A versão fica fixada, e cada
+atualização precisa ser testada (C8).
+
+O segundo preço está no sinal e no formato. O modelo de dados de \textit{logs}
+e o protocolo são estáveis \citep{otel_logs_data_model, otlp_spec_1_11_1}. O
+modelo foi declarado estável em março de 2022, sem a API e os SDKs de
+\textit{logs} \citep{otel_spec_pr_2387}, e o suporte a \textit{logs} no SDK de
+Python ainda está em desenvolvimento \citep{otel_python_docs}; como o caminho
+não usa SDK, importam o modelo e o protocolo. O JSON do OTLP é a tradução do
+protobuf e herda as regras dele: ao emitir, inteiros de 64 bits, como os
+carimbos de tempo em nanossegundos, saem como texto decimal, enumerações como
+inteiros e identificadores em hexadecimal \citep{otlp_spec_1_11_1}. O cliente
+tem de conhecer essas regras, e o corpo fica maior que o do protobuf
+(Capítulo~\ref{cap:solucao}). O protocolo também não garante entrega única: a
+especificação diz que reenviar para garantir a entrega pode gerar duplicatas,
+e trata isso como uma troca aceita de propósito \citep{otlp_spec_1_11_1}. A
+confirmação depois da gravação e o descarte de repetidos ficam com o backend
+próprio (C7).
+
+O terceiro preço é o que fica guardado no backend. O Go envia contadores agregados
+por semana, não um fluxo de eventos (Seção~\ref{sec:precedentes}). Russ Cox,
+autor do design, escreveu que evitar um fluxo de eventos é uma das formas
+importantes de a telemetria do Go reduzir o impacto sobre a privacidade, e
+disse entender o OpenTelemetry como construído em torno de um fluxo de
+eventos \citep{go_discussion_58409}.
+
+Este trabalho envia um registro por evento e
+agrega no backend, pelos motivos de extensibilidade do
+Capítulo~\ref{cap:solucao}. A redução de impacto vem de passos feitos no
+cliente, antes do envio: o consentimento, a exclusão dos campos que o usuário
+escolher, a granularidade do tempo reduzida à semana e o identificador
+aleatório de cada instalação; o backend reduz de novo a granularidade do
+tempo no que recebe, como segunda barreira. O custo é que o backend guarda eventos individuais, e quem o
+opera vê mais do que um contador semanal mostraria.
+
+O peso de guardar eventos individuais, porém, depende de como a ferramenta é
+usada. A cadeia de ferramentas do Go é a base de quem programa na linguagem; o
+kw é chamado de tempos em tempos durante o trabalho no kernel, para compilar,
+instalar ou preparar o envio de \textit{patches}. Um registro a cada chamada
+do kw é, na leitura deste trabalho, um fluxo de eventos modesto. Como o tempo
+de cada registro sai com granularidade de semana, o fluxo também revela pouco sobre
+quando o usuário trabalha, embora o trabalho no kernel deixe rastros públicos e
+datados, nos \textit{commits} e nas listas de e-mail, aos quais esses
+registros ainda podem ser ligados pela semana. Dois pontos ficam em aberto: a
+estabilidade dos \textit{processors} em beta, que precisa ser acompanhada, e o
+anonimato dos eventos individuais quando o backend reunir os de muitas
+instalações, que o Capítulo~\ref{cap:privacidade} retoma.

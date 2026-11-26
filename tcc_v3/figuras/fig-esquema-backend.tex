@@ -1,0 +1,47 @@
+\begin{tikzpicture}[
+    x=1cm, y=1cm,
+    every node/.style={font=\footnotesize},
+    tabela/.style={draw, rectangle split, rectangle split parts=2,
+                   rectangle split part fill={black!12, white},
+                   inner sep=3pt, font=\footnotesize},
+    fk/.style={-{Latex[length=1.6mm]}, semithick},
+    nota/.style={font=\scriptsize, align=left, inner sep=1.5pt},
+  ]
+  \providecommand{\kwcolunas}{}\renewcommand{\kwcolunas}[1]{%
+    {\setlength{\tabcolsep}{0pt}\begin{tabular}{@{}l<{\hspace{1.2em}}@{}r@{}}#1\end{tabular}}}
+  \providecommand{\kwcol}{}\renewcommand{\kwcol}[2]{\texttt{#1} & {\scriptsize #2}\\}
+  \providecommand{\kwdestaque}{}\renewcommand{\kwdestaque}[2]{%
+    \rowcolor{black!12}\texttt{\textbf{#1}} & {\scriptsize\textbf{#2}}\\}
+
+  \node[tabela] (batch) at (0, 0) {%
+    \texttt{export\_batch}
+    \nodepart{two}
+    \kwcolunas{\kwcol{id}{PK}\kwcol{received\_at}{TEXT}\kwcol{body\_bytes}{INTEGER}%
+             \kwcol{point\_count}{INTEGER}}};
+
+  \node[tabela, anchor=north west] (log) at (3.6, 2.6) {%
+    \texttt{log\_record}
+    \nodepart{two}
+    \kwcolunas{\kwcol{id}{PK}\kwcol{batch\_id}{FK}\kwcol{received\_at}{TEXT}%
+             \kwcol{service\_name}{TEXT}\kwcol{service\_instance\_id}{TEXT}%
+             \kwcol{pipeline\_hop}{TEXT}\kwcol{scope\_name}{TEXT}%
+             \kwcol{time\_unix\_nano}{INTEGER}\kwcol{observed\_time\_unix\_nano}{INTEGER}%
+             \kwcol{body}{TEXT}\kwcol{event\_id}{INTEGER}%
+             \kwdestaque{attributes}{TEXT (JSON)}%
+             \kwcol{dedupe\_key}{TEXT, UNIQUE}}};
+
+  \node[tabela] (raw) at (0, -3.2) {%
+    \texttt{log\_record\_raw}
+    \nodepart{two}
+    \kwcolunas{\kwcol{id}{PK}\kwcol{batch\_id}{FK}\kwcol{received\_at}{TEXT}%
+             \kwcol{reason}{TEXT}\kwcol{raw}{TEXT}}};
+
+  \draw[fk] (log.west |- 0, 1.25) -| node[above, font=\scriptsize, pos=0.25] {\texttt{batch\_id}} (batch.north);
+  \draw[fk] (raw.north) -- node[right, font=\scriptsize] {\texttt{batch\_id}} (batch.south);
+
+  \node[nota, anchor=north west, text width=6.6cm] at ([yshift=-0.2cm]log.south west)
+    {\texttt{attributes}: todos os atributos do registro, juntos, num
+     documento JSON.\\
+     \texttt{dedupe\_key}: chave de repetição; um registro repetido não é
+     gravado de novo.};
+\end{tikzpicture}

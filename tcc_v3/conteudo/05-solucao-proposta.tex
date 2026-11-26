@@ -1,0 +1,555 @@
+%!TeX root=../main.tex
+
+\chapter{Solução Proposta}
+
+\label{cap:solucao}
+
+Justificada a escolha do OpenTelemetry, falta mostrar o caminho que o usa:
+levar o que o kw
+registra na máquina de quem o usa até um repositório central, só com
+consentimento, sem que o kw deixe de ser um conjunto de comandos curtos em
+Bash e sem que cada dado novo obrigue a refazer o caminho. Este capítulo diz o
+que cada componente faz e por quê, do lado do cliente ao lado do servidor, e
+parte, depois de uma visão geral, do banco do kw, onde o dado nasce, e termina
+na extensibilidade do sistema. Como os componentes foram construídos fica para o Capítulo~\ref{cap:implementacao}, e a
+verificação, para o Capítulo~\ref{cap:validacao}.
+
+\section{Visão geral da arquitetura}
+\label{sec:arquitetura}
+
+O dado percorre quatro componentes até poder ser consultado
+(Figura~\ref{fig:arquitetura-caminho}). O kw grava cada evento no seu banco
+local, como já fazia (Seções~\ref{sec:funcionalidades}
+e~\ref{sec:banco-local}). Um programa separado, o kw\_tele, lê o que ainda não
+foi enviado e o manda por OTLP sobre HTTP, com corpo JSON, a um Collector. O
+Collector repassa os registros a um backend próprio, escrito para este
+trabalho, que os grava num banco SQLite e só então confirma o recebimento; a
+confirmação volta pelo mesmo caminho até o kw\_tele, como mostra a
+Seção~\ref{sec:backend}. O mesmo backend próprio responde às consultas, lendo desse
+banco (Seção~\ref{sec:consulta}).
+
+\begin{figure}[!ht]
+  \centering
+  \resizebox{\textwidth}{!}{\input{figuras/fig-arquitetura-caminho}}
+  \caption{Caminho dos dados, da máquina de quem usa o kw até a consulta. A
+    linha vertical marca a fronteira de confiança; a seta pontilhada é a
+    confirmação, que volta pelo mesmo caminho depois que o backend próprio
+    grava os registros.}
+  \label{fig:arquitetura-caminho}
+\end{figure}
+
+Do lado do cliente ficam dois componentes. O próprio kw registra as
+execuções e, antes de cada comando, decide se pergunta pelo consentimento ou
+se dispara um envio em segundo plano, que nunca faz o comando esperar. O
+kw\_tele, escrito em Python só com a biblioteca padrão, lê o banco do kw,
+reduz a granularidade do tempo, tira os campos que o usuário escolheu não
+enviar, monta o registro OTLP, envia e marca o que foi entregue. A
+Seção~\ref{sec:cliente} trata dos dois.
+
+Do lado do servidor ficam os outros. O Collector é o receptor de OTLP já
+pronto, só configurado: limita o uso de memória e repassa os registros ao
+backend, sem filtrar por atributo. O backend próprio separa os registros, põe à
+parte os malformados e grava os demais, sem repetir o que já tinha. O backend
+também responde às consultas, por rotas só de leitura: umas dizem que tipos de
+registro e que atributos existem nos dados, e outra agrupa os registros por
+qualquer um desses atributos. Os dois componentes estão na
+Seção~\ref{sec:backend}, e a consulta, na Seção~\ref{sec:consulta}.
+
+A fronteira de confiança, a linha entre o que o usuário controla e o que
+outros recebem, é a máquina de quem usa o kw. Do lado de dentro estão o banco
+do kw, a configuração e o kw\_tele, que roda como o próprio usuário. O único
+ponto em que o dado cruza a fronteira é o envio do kw\_tele ao Collector; dali em diante, tudo fica do lado do servidor, e nenhum componente ali sabe o
+que cada usuário escolheu.
+
+Por isso, a privacidade é aplicada no cliente, antes de o dado sair da
+máquina: o opt-in, a exclusão dos campos que o usuário escolher, a granularidade
+de semana do tempo e o identificador aleatório de cada instalação. O Collector
+não filtra nada por campo e supõe que o que chega foi consentido. O backend
+reduz de novo a granularidade do tempo no que recebe, para que a regra valha
+também contra um cliente antigo ou de outra origem. Os detalhes de cada
+mecanismo estão no Capítulo~\ref{cap:privacidade}.
+
+As duas pontas têm bancos separados. O do kw segue o esquema do kw; o do
+backend é genérico e não sabe nada sobre o kw, porque guarda os atributos que
+chegam sem conhecê-los de antemão. Essa separação é o que sustenta a
+extensibilidade do sistema, discutida na Seção~\ref{sec:extensibilidade}.
+
+\section{O banco local do kw}
+\label{sec:banco-local}
+
+Todo dado que sai da máquina começa no banco do kw
+(Seção~\ref{sec:base-local}). O kw grava cada uso como um evento, uma linha
+da tabela de eventos com identificador, data e hora, e o resto do que se sabe
+sobre aquele uso fica em outras tabelas, ligadas ao evento. Este texto chama
+de \emph{tabela de extensão} uma tabela cuja chave aponta, como chave
+estrangeira, para o identificador do evento, e que acrescenta informação a
+ele; a de execuções é a que o kw já tinha. Os nomes de comando e de estado não
+ficam por extenso nessas tabelas: ficam como um número que aponta para uma
+\emph{tabela de nomes}. O banco tem um dono só: o kw cria e muda o esquema, e
+o kw\_tele apenas lê os eventos e atualiza neles uma marca de envio.
+
+As três propriedades do esquema apresentadas na Seção~\ref{sec:base-local}
+não atrapalham o \texttt{kw report}, mas pesam quando o dado sai da máquina,
+e a elas se soma uma quarta: o banco não tinha onde registrar que um evento já
+foi enviado. Um identificador reaproveitado faria um evento novo passar por um
+já enviado. A hora local sem fuso não é o instante absoluto que o OTLP espera.
+Sem versão do esquema, nada garante que uma instalação existente tenha uma
+coluna nova. E, sem estado de exportação, não havia como evitar reenviar e
+contar duas vezes o que já tinha saído. A Tabela~\ref{tab:esquema} resume o
+efeito de cada uma e o que foi feito.
+
+\input{figuras/tab-esquema}
+
+A mudança nas tabelas que já existiam é uma só, e aditiva: uma coluna no evento
+que diz se ele está pendente, se ficou de fora do envio por ser anterior ao
+consentimento ou em que momento foi enviado. Ela mora no banco do kw, junto com
+os dados de uso que descreve, e não num arquivo à parte, e é a própria fila de
+envio do kw\_tele (Seção~\ref{sec:cliente}). Como o esquema não tem versão, uma
+verificação feita antes de perguntar o consentimento, antes de cada envio e nos
+comandos de telemetria acrescenta a coluna aos bancos já instalados quando ela
+falta. Nenhuma tabela, coluna ou \textit{view} existente foi alterada. A lista
+de módulos entrou como uma tabela de extensão nova, e o kw grava o evento e a
+sua linha de extensão juntos, para que a linha nunca fique sem evento
+(Seção~\ref{sec:extensibilidade}). Essas mudanças, com o disparador de envio
+(Seção~\ref{sec:cliente}), estão num ramo do \textit{fork} do kw usado neste
+trabalho e não foram propostas ao projeto.
+
+Três mudanças ficam como proposta. A primeira é uma coluna com o instante do
+evento em UTC, ao lado da data e da hora atuais, o que resolveria a virada da
+semana e a ordenação, e é defensável como correção isolada. A segunda é
+impedir o reaproveitamento do identificador, o que exige recriar a tabela de
+eventos. A terceira é versionar o esquema, com uma guarda de migração. O
+trabalho parou na mudança mínima porque, sem versionamento, alterar a tabela
+de eventos exigiria antes construir a infraestrutura de migração e mexeria em
+funções do kw que dependem das \textit{views} atuais, o que, na leitura deste
+trabalho, não se justifica só pela telemetria. Enquanto isso, o cliente e o
+backend contornam as propriedades: a marca de envio confere o identificador, a
+data e a hora do evento, a chave de repetição do backend usa o identificador,
+e a granularidade de semana torna o fuso relevante só perto da virada da
+semana.
+
+\section{O cliente}
+\label{sec:cliente}
+
+O cliente tem duas metades. Uma é pequena, fica dentro do kw, é escrita em
+Bash e roda antes de cada comando só para decidir se é preciso fazer alguma
+coisa. A outra é um programa separado, o kw\_tele, escrito em Python, que lê
+os eventos, prepara o registro e o envia. A divisão segue de uma regra
+simples: o que roda em todo comando tem de custar quase nada e nunca falhar, e
+montar JSON e falar HTTP com confirmação de entrega é trabalho que o Bash não
+faz bem. O kw\_tele é chamado pelo kw do mesmo modo que outras ferramentas
+externas que ele já usa, a exemplo do \texttt{patch-hub}
+(Seção~\ref{sec:kw-o-que-e}).
+
+Do lado do kw, o registro de uso continua como era: cada execução vira um
+evento no banco local, por um único ponto de escrita
+(Seção~\ref{sec:funcionalidades}). O que muda é que cada evento ganha uma marca de envio
+(Seção~\ref{sec:banco-local}) e que uma verificação curta, o disparador de
+envio, roda antes de cada comando. O
+disparador faz uma sequência de perguntas (Figura~\ref{fig:disparador}): se o
+comando é o próprio \texttt{kw telemetry}, que fica de fora; se o kw\_tele
+está instalado; qual é o consentimento; e, com o consentimento dado, se o
+comando é dos que registram uso e se já é hora de enviar. Enquanto o usuário
+não responde, a pergunta de consentimento vem antes de qualquer outro comando,
+inclusive os de ajuda e de versão, que não registram uso.
+
+O disparador decide que é hora de enviar quando venceu o intervalo desde o
+último envio bem-sucedido ou quando há eventos pendentes
+demais, para que quem usa muito o kw não acumule uma fila grande; entre um
+disparo e outro há também um intervalo de tempo mínimo, que cresce quando os
+envios falham. O Go faz algo parecido, ao enviar seus relatórios uma vez por semana
+(Seção~\ref{sec:precedentes}).
+
+\begin{figure}[!ht]
+  \centering
+  \input{figuras/fig-disparador}
+  \caption{O que o disparador decide antes de cada comando do kw. Toda saída
+    termina no comando; só a pergunta do consentimento espera o usuário, e o
+    envio corre em segundo plano.}
+  \label{fig:disparador}
+\end{figure}
+
+O consentimento é opt-in: o padrão é não enviar nada. O usuário responde a
+uma pergunta no terminal, na qual também decide se os eventos gravados antes
+da resposta vão junto, pode excluir campos do envio e pode mudar de ideia a
+qualquer momento. Tudo isso é aplicado no cliente
+(Seção~\ref{sec:arquitetura}), e as respostas possíveis e o que cada uma faz
+estão no Capítulo~\ref{cap:privacidade}. O único momento em que o disparador espera o usuário é a pergunta de
+consentimento, e só quando há um terminal para respondê-la; as demais
+verificações são consultas locais curtas; em todos os casos, ele termina deixando o comando
+seguir, e um problema na telemetria nunca impede um comando do kw de rodar.
+
+Quando é hora de enviar, o disparador não envia. Ele dispara o kw\_tele em
+segundo plano, com prazo, desligado do terminal, e deixa o comando seguir; o
+comando não espera pelo envio. Um backend parado não pode segurar, por
+exemplo, uma compilação do kernel. Uma falha no envio vira um estado guardado
+na máquina, e não um erro do comando, e o disparador o lê na vez seguinte.
+Como não há processo residente, também não há relógio: o envio acontece no
+primeiro comando elegível depois de vencido o intervalo, e não numa hora
+marcada.
+
+Uma execução do kw\_tele segue um fluxo linear
+(Figura~\ref{fig:kwtele-execucao}). Ele confere o consentimento a cada lote,
+lê o esquema do banco do kw para saber que tabelas estendem o evento e
+seleciona os eventos pendentes em lotes. Para cada evento, reduz a
+granularidade do tempo, tira os campos que o usuário excluiu e monta o
+registro OTLP (Seção~\ref{sec:mapeamento}); então envia o lote e marca as
+linhas só depois de o backend confirmar que as gravou
+(Seção~\ref{sec:backend}). A fila de envio é a própria marca no banco do kw, e
+não uma fila na memória do programa. Se o backend recusa um lote pelo
+conteúdo, o kw\_tele divide o lote até isolar a linha recusada, que fica
+pendente para a próxima execução, e segue com as demais; ao fim, a execução
+conta como falha, para que a linha seja tentada de novo; qualquer outra falha
+interrompe a execução, que é refeita numa vez seguinte. O programa não conhece
+as colunas de antemão: ele as lê do banco, o que é a base do argumento da
+Seção~\ref{sec:extensibilidade}.
+
+\begin{figure}[!ht]
+  \centering
+  \resizebox{\textwidth}{!}{\input{figuras/fig-kwtele-execucao}}
+  \caption{Uma execução do kw\_tele. As setas pontilhadas atravessam a rede; um
+    lote recusado pelo conteúdo é dividido até isolar a linha recusada, que fica
+    pendente.}
+  \label{fig:kwtele-execucao}
+\end{figure}
+
+Esse design decorre do que o kw é: uma ferramenta em Bash, que não deve ganhar
+dependências pesadas, feita de comandos curtos, sem nada residente, e cuja
+telemetria não pode atrasar nem quebrar um comando. Disso decorrem duas
+escolhas. A primeira é não usar o SDK do OpenTelemetry no cliente. O SDK traz
+instrumentação e convenções prontas, mas, no SDK de Python com processamento
+em lote, quem envia não sabe se o envio chegou, e este design precisa marcar
+cada linha como enviada só depois da confirmação; além disso, o SDK traria
+dependências que o cliente evita. A comparação, com as fontes, está nas
+Seções~\ref{sec:alternativas} e~\ref{sec:limites-otel}; o caminho síncrono do
+SDK não foi avaliado.
+
+A segunda escolha é usar o OTLP sobre HTTP com corpo JSON, e não sobre gRPC
+com protobuf. O Python traz JSON e HTTP na biblioteca padrão e não traz gRPC
+nem protobuf, e o corpo em JSON pode ser lido por quem quiser conferir o que
+seria enviado. O preço é um corpo maior e as regras do JSON do OTLP,
+discutidas na Seção~\ref{sec:limites-otel}. Na leitura deste trabalho, um
+processo que roda por segundos também não se beneficiaria da conexão longa do
+gRPC.
+
+\section{Do evento do kw ao registro OTLP}
+\label{sec:mapeamento}
+
+Esta seção acompanha um evento do kw do momento em que ele é gravado até sair
+da máquina como registro OTLP. O exemplo é uma compilação bem-sucedida com a
+lista de módulos, a fonte acrescentada ao kw como demonstração
+(Seção~\ref{sec:extensibilidade}). Quando o usuário compila o kernel, o kw grava
+um evento: uma linha da tabela de eventos, com identificador, data e hora
+(Seção~\ref{sec:base-local}). O resto do que se sabe sobre aquela compilação fica nas tabelas de extensão
+do evento (Seção~\ref{sec:banco-local}). Aqui há duas. A da execução, com o comando, a duração e o estado em que
+terminou, já existia no kw. A da lista de módulos, com a contagem e os nomes,
+é a nova, acrescentada neste exemplo. O comando e o estado ficam como um número que aponta para uma tabela de nomes.
+
+Na hora do envio, o kw\_tele não sabe de antemão que tabelas existem. Ele lê o
+esquema do banco e acha as tabelas de extensão por essa chave estrangeira, de
+modo que uma tabela nova ligada ao evento passa a ser enviada sem mudar o
+cliente. Para cada evento pendente, junta a linha do evento com as linhas das
+extensões que têm o mesmo identificador e troca cada número pelo nome
+correspondente. Cada linha de extensão vira um registro OTLP, e um evento sem
+extensão vira um registro só. Nem todo comando preenche todas as tabelas de
+extensão: cada comando grava só as que lhe dizem respeito. Compilar o kernel ou
+instalá-lo numa máquina de teste preenche a da execução e a dos módulos; listar
+ou remover os kernels instalados, só a da execução; o \texttt{pomodoro}
+preenche apenas a sua, de sessões de trabalho. O número de registros por evento
+varia, portanto, com o comando. A compilação do exemplo vira, portanto, dois
+registros com o mesmo identificador de evento
+(Figura~\ref{fig:evento-registro}).
+
+\begin{figure}[!ht]
+  \centering
+  \resizebox{\textwidth}{!}{\input{figuras/fig-evento-registro}}
+  \caption{Um evento de compilação do kw virando dois registros OTLP, um por
+    linha de extensão, sob um só recurso. Valores ilustrativos.}
+  \label{fig:evento-registro}
+\end{figure}
+
+Cada registro é montado com o que foi lido. O corpo traz o tipo do registro,
+isto é, o nome da tabela de extensão, ou \enquote{event} quando não há
+extensão, e o mesmo valor vai num atributo de tipo, para que a consulta agrupe
+por tipo. Cada coluna vira um atributo cujo nome diz de onde ela veio:
+\texttt{kw.event.<coluna>} para o evento e \texttt{kw.<tabela>.<coluna>} para a
+extensão, como \texttt{kw.build\_modules.module\_count} no registro dos
+módulos. A coluna que apontava para uma tabela de nomes sai com o nome, como o
+comando, em \texttt{kw.executed.command\_label}. O identificador do evento vai
+como atributo, porque o registro OTLP não tem identidade própria e o backend
+precisa dele para reconhecer repetidos (Seção~\ref{sec:backend}). O nível de
+severidade, o campo do modelo de \textit{logs} que classifica o registro como
+informação, aviso ou erro, não tem equivalente no kw e sai com o valor neutro
+de informação. A Tabela~\ref{tab:mapeamento} lista todos os campos.
+
+\input{figuras/tab-mapeamento}
+
+O tempo é o único campo que muda de valor no caminho, e muda de propósito. No
+kw, a data e a hora do evento estão em texto, no horário local e sem fuso. No
+registro, o tempo vai com granularidade de semana: o campo do tempo do evento
+leva o instante da semana em que ele ocorreu, um mesmo instante para toda a
+semana, e o atributo da data passa a ser a segunda-feira daquela semana. A
+hora não sai, e a marca de envio também não. O motivo é que o horário de
+trabalho do usuário não sai da máquina (Capítulo~\ref{cap:privacidade}). A
+redução não é configurável, e, quando a data guardada não é legível, o tempo
+sai como desconhecido e a data não é enviada. O modelo de \textit{logs} prevê
+nesse campo o instante em que o evento ocorreu \citep{otel_logs_data_model};
+levar o instante da semana é um desvio deliberado, e um evento perto da virada
+da semana em UTC pode cair na semana vizinha, limite retomado na
+Seção~\ref{sec:banco-local}.
+
+Os registros de um envio saem juntos, sob um recurso, a parte do documento OTLP
+que diz quem os produziu: o serviço, a versão do kw, um identificador da
+instalação e o nome, a linguagem e a versão do cliente, com os nomes de
+atributo das convenções do OpenTelemetry, que marcam os quatro últimos como
+estáveis \citep{otel_semconv_resource_v1_45_0}. O identificador da instalação é
+aleatório, criado quando o usuário aceita enviar, como as convenções
+recomendam \citep{otel_semconv_registry_service_v1_45_0}; ele serve para contar
+instalações e separar os repetidos de cada uma, sem relação com o usuário ou a
+máquina (Capítulo~\ref{cap:privacidade}). O cliente se identifica como
+kw\_tele, e não pelo nome que as convenções reservam ao SDK oficial
+\citep{otel_semconv_resource_v1_45_0}. Cada registro leva também o momento do
+envio, como momento da observação, igualmente com granularidade de semana. O documento segue por HTTP, com corpo JSON, para o Collector
+(Figura~\ref{fig:requisicao-otlp}). Cada evento vira um
+registro de \textit{log} porque é um fato com tempo e atributos; contar e
+agrupar fica para o backend.
+
+\begin{figure}[!ht]
+  \centering
+  \input{figuras/fig-requisicao-otlp}
+  \caption{Uma requisição OTLP decomposta. Os atributos de cada registro estão
+    na Figura~\ref{fig:evento-registro}.}
+  \label{fig:requisicao-otlp}
+\end{figure}
+
+Na tradução, o evento virou o registro, cada coluna virou um atributo e a
+tabela virou o tipo; pediram adaptação o tempo, as colunas de nomes, o
+identificador do evento e o nível de severidade. O que o kw não guarda, o fuso
+e a versão do esquema, e o identificador que pode ser reaproveitado são o
+assunto da Seção~\ref{sec:banco-local}.
+
+\section{O Collector e o backend próprio}
+\label{sec:backend}
+
+O Collector recebe, processa e repassa registros, mas não os guarda num banco
+de dados. A distribuição usada, a principal, na versão 0.121.0, não traz
+exportador para banco: os seus exportadores enviam a outro receptor, a um
+arquivo ou a sistemas de métricas e de mensagens
+\citep{otelcol_releases_manifest_0_121_0}. Exportadores para bancos, como o do
+ClickHouse, existem só na distribuição \textit{contrib}, em estágio beta para
+\textit{logs} \citep{otelcol_contrib_clickhouse_metadata_0_121_0}, e nenhum
+grava em SQLite. Por isso este trabalho pôs um backend próprio depois do
+Collector, e a divisão de papéis ficou assim: o Collector é a parte exposta
+aos clientes, que recebe o protocolo e se protege de picos de carga; o backend
+fica atrás dele, separa, guarda e confirma, e serve a consulta
+(Seção~\ref{sec:consulta}). Na leitura deste trabalho, é essa divisão que
+deixa ao código escrito aqui só o que é específico do caminho.
+
+O Collector é usado como vem, só por configuração
+(Figura~\ref{fig:collector}): um receptor de OTLP sobre
+HTTP, um limite de uso de memória, um processador que só acrescenta um
+atributo de marcação e um exportador que repassa os registros ao backend
+próprio. É esse reuso que motivou a escolha do OpenTelemetry
+(Seção~\ref{sec:criterios}): o trabalho não precisou escrever o receptor
+voltado aos clientes nem a proteção contra picos de carga. O limite de memória
+vem antes de tudo e recusa o excesso antes de processá-lo, e o cliente trata
+essa recusa como passageira, deixando as linhas para uma próxima vez. O
+Collector não agrupa registros em lote nem guarda fila, por uma razão
+explicada adiante, e não filtra nada por campo: ele supõe que o que chega já
+foi consentido (Seção~\ref{sec:arquitetura}).
+
+\begin{figure}[!ht]
+  \centering
+  \resizebox{\textwidth}{!}{\input{figuras/fig-collector}}
+  \caption{Dentro do Collector, no caminho dos registros. O que está
+    pontilhado não existe neste caminho.}
+  \label{fig:collector}
+\end{figure}
+
+O backend próprio entende só a pequena parte do OTLP sobre HTTP de que o
+caminho precisa, que é receber registros de \textit{log}. Ele separa o corpo da
+requisição que o Collector repassa em registros
+(Figura~\ref{fig:backend-entrada}), e o que não se encaixa no formato vai para um
+armazenamento à parte, junto com o motivo, sem derrubar o resto do lote. O
+conteúdo nunca é motivo para recusar uma requisição: se fosse, cada registro
+malformado faria o cliente dividir o lote até isolá-lo e deixá-lo pendente,
+para recusá-lo de novo a cada tentativa.
+
+\begin{figure}[!ht]
+  \centering
+  \resizebox{\textwidth}{!}{\input{figuras/fig-backend-entrada}}
+  \caption{A entrada do backend próprio. A granularidade do tempo é reduzida à
+    semana antes do cálculo da chave de repetição, e o lote é gravado de uma
+    vez, sem os repetidos, antes da resposta.}
+  \label{fig:backend-entrada}
+\end{figure}
+
+O backend próprio guarda os dados em três tabelas
+(Figura~\ref{fig:esquema-backend}). Cada requisição recebida vira uma linha numa
+tabela de lotes, com o momento da chegada, em granularidade de semana, e o
+tamanho do corpo. Cada registro bem formado vira uma linha numa tabela de
+registros, ligada ao seu lote: ela tem uma coluna para cada campo fixo do OTLP,
+como a instalação, o corpo, o tempo do evento, o da observação e o
+identificador do evento, e guarda todos os atributos juntos, num único
+documento JSON. Os registros malformados vão para uma terceira tabela, também
+ligada ao lote, com o motivo e o corpo como chegou. Não há uma coluna por
+atributo nem uma tabela por fonte: um atributo novo é só mais uma chave no
+documento, e a consulta o lê pelo nome (Seção~\ref{sec:extensibilidade}). O
+preço é que o banco não sabe o tipo de cada atributo: a consulta agrupa pelos
+valores lidos como texto e só soma uma medida onde o valor é numérico,
+contando à parte os que não são.
+
+\begin{figure}[!ht]
+  \centering
+  \input{figuras/fig-esquema-backend}
+  \caption{O banco do backend próprio. Os atributos de cada registro ficam
+    juntos num documento JSON; não há coluna por atributo nem tabela por
+    fonte.}
+  \label{fig:esquema-backend}
+\end{figure}
+
+Em seguida, o backend reduz de novo a granularidade do tempo à semana, para
+que a regra valha também contra um cliente antigo ou de outra origem
+(Seção~\ref{sec:mapeamento}); o Collector, como vem, não altera o tempo, e por
+isso a regra fica no backend. É a única regra por campo aplicada no Collector
+ou no backend. Com o tempo já reduzido, o backend calcula para cada registro
+uma chave de repetição. Um registro com identificador de evento, como os que o
+kw\_tele envia, é reconhecido pela instalação, pelo seu corpo e por esse
+identificador; como o tempo deixou de distinguir um evento de outro, é o
+identificador que faz esse papel.
+
+Por fim, o backend grava o lote inteiro de uma vez, ignorando os registros
+cuja chave já existe, e só então responde com sucesso; um reenvio, portanto,
+não duplica nada. Se a gravação falha, ele responde com erro, e nada daquele
+lote conta como recebido. Essa ordem é o que sustenta a cadeia de confirmação de ponta a ponta
+(Figura~\ref{fig:confirmacao}). O kw\_tele só marca uma linha como enviada quando recebe uma
+resposta de sucesso. O Collector só responde com sucesso depois que o backend
+respondeu, porque não tem lote nem fila que o deixem responder antes. E o
+backend só responde depois de gravar. Assim, um sucesso visto pelo kw\_tele
+quer dizer que o lote foi gravado, com o que não coube no formato guardado à
+parte.
+
+Se o backend está parado, o Collector devolve erro, o kw\_tele não marca nada
+e as linhas continuam pendentes; o próximo envio as manda de novo, e o
+descarte de repetidos garante que um reenvio depois de uma falha parcial não
+duplica registros. O padrão do exportador do Collector é ligar fila e novas
+tentativas \citep{otel_collector_exporterhelper_v0_121_0}; elas foram
+desligadas aqui para que a resposta de sucesso só venha depois da gravação.
+Uma fila persistente no Collector, alternativa para uso em produção, não foi
+construída.
+
+\begin{figure}[!ht]
+  \centering
+  \resizebox{\textwidth}{!}{\input{figuras/fig-confirmacao}}
+  \caption{A confirmação. O kw\_tele só marca o lote como enviado depois que o
+    sucesso volta do backend próprio, pelo Collector; com o backend parado, as
+    linhas ficam pendentes.}
+  \label{fig:confirmacao}
+\end{figure}
+
+\section{Consulta dos dados}
+\label{sec:consulta}
+
+O caminho descrito até aqui termina numa linha gravada pelo backend, e essas
+linhas só servem se puderem ser lidas. O artigo do kw lista como alvos de
+medição, por exemplo, em que hardware se compila e quem está sobrecarregado na
+hierarquia de mantenedores (Seção~\ref{sec:dados-de-uso}); outros autores vão
+querer outras coisas, e o backend não sabe de antemão que tipos de registro nem
+que atributos vão chegar (Seção~\ref{sec:backend}). Por isso nenhuma consulta é
+escrita para uma fonte: a pergunta chega como parâmetro. O backend próprio, o
+mesmo que recebe os registros do Collector, oferece para isso três rotas, todas
+só de leitura. Duas descrevem o que há nos dados, e a terceira agrupa e conta
+(Figura~\ref{fig:consulta}).
+
+\begin{figure}[!ht]
+  \centering
+  \resizebox{\textwidth}{!}{\input{figuras/fig-consulta}}
+  \caption{As rotas de consulta sobre o banco do backend próprio. Valores
+    ilustrativos.}
+  \label{fig:consulta}
+\end{figure}
+
+A primeira rota devolve os tipos de registro que existem, isto é, os corpos,
+que são os nomes das tabelas de extensão (Seção~\ref{sec:mapeamento}), cada
+um com o número de registros e de instalações distintas. A segunda recebe um
+desses tipos e devolve os atributos que aparecem nele, com quantos registros
+têm cada um. É o ponto de partida quando não se sabe o que o kw grava: um tipo novo, como o da lista de módulos, aparece na primeira rota assim
+que o primeiro registro dele é gravado, e os seus atributos, na segunda
+(Seção~\ref{sec:extensibilidade}).
+
+A terceira rota recebe um tipo e agrupa os seus registros pelos atributos
+pedidos; se pedido, também resume uma medida numérica, como a duração de uma
+execução. Os grupos podem ainda ser separados por semana, a granularidade com
+que o tempo chega, e por instalação. A instalação aparece como um rótulo de ordem, e não com o seu identificador; o
+risco desse rótulo está no Capítulo~\ref{cap:privacidade}. Antes
+de agrupar, a consulta pode restringir os registros a um valor de atributo e a
+um intervalo de semanas. Cada grupo traz o número de registros e o número de
+instalações distintas. Os valores são agrupados como texto, e a medida só é
+somada onde o valor é numérico, com os demais contados à parte, porque os atributos são guardados sem tipo.
+
+Como cada fonte é um tipo separado, uma pergunta que cruza fontes precisa
+juntar os registros. A terceira rota aceita outros tipos para juntar ao
+pedido, ligando os registros do mesmo evento pela instalação e pelo identificador do
+evento, que o cliente envia em todo registro e que o usuário não pode excluir
+(Seção~\ref{sec:mapeamento}); um registro sem instalação ou sem esse
+identificador não se junta a nenhum outro.
+Com os dados de demonstração, a contagem de módulos vem dos registros da lista
+de módulos e o estado da execução vem dos de execução. Juntando os dois tipos,
+uma pergunta possível é se as compilações que falham têm mais módulos que as
+bem-sucedidas; outra, sem junção, é quantas compilações terminaram em cada
+estado a cada semana.
+
+A consulta só devolve agregados: nenhuma rota devolve um registro individual
+nem o identificador real de uma instalação, e os registros brutos ficam com
+quem opera o backend. Ela também não traz painel nem gráfico. A resposta é um documento JSON, para
+ser lida por um programa ou levada a uma ferramenta de análise, que também
+poderia ler o mesmo banco SQLite; na leitura deste trabalho, é o mínimo para
+responder a uma pergunta sem escrever código para ela. A falta de supressão de
+grupos pequenos e de autenticação nas rotas são limites tratados no
+Capítulo~\ref{cap:privacidade}, e a consulta sobre dados de várias
+instalações é mostrada no Capítulo~\ref{cap:validacao}. A mesma consulta serve
+a qualquer fonte que chegue pelo caminho (Seção~\ref{sec:extensibilidade}).
+
+\section{Extensibilidade do sistema}
+\label{sec:extensibilidade}
+
+O sistema é extensível porque o conhecimento sobre o dado mora num ponto só, o
+esquema do kw, e o resto do caminho o descobre em vez de o trazer escrito. A
+Tabela~\ref{tab:extensao} resume o argumento, componente a componente, para uma
+fonte nova. O kw é o único lugar que muda: a fonte nova é uma tabela ligada ao
+evento e o código do kw que a preenche. O kw\_tele não precisa ser alterado,
+porque descobre no esquema do banco as tabelas que estendem o evento e
+transforma cada coluna num atributo (Seção~\ref{sec:mapeamento}). O protocolo
+também não, porque ele define os atributos do registro de \textit{log} como
+pares de chave e valor, sem fixar as chaves
+\citep{otel_common_spec_v1_63_0,otlp_spec_1_11_1}, e um tipo novo é apenas
+outro valor no corpo do registro. O Collector não olha os atributos. A exceção é o tempo: uma coluna de tempo própria da extensão sai como foi
+gravada, porque a redução da granularidade só vale para as colunas do evento
+(Seção~\ref{sec:mapeamento}).
+
+\input{figuras/tab-extensao}
+
+No backend próprio, os atributos de cada registro são guardados juntos, num
+documento JSON, e não numa coluna para cada um; a tabela de registros não
+depende, assim, de que atributos chegam nem de como se chamam
+(Figura~\ref{fig:esquema-backend}). A consulta descobre nos próprios dados os
+tipos de registro e os atributos que existem, recebendo o nome do atributo como
+parâmetro (Seção~\ref{sec:consulta}). Nenhum componente depois do kw conhece
+fonte alguma, e por isso não há nada a registrar quando uma fonte aparece. A
+privacidade acompanha o dado novo do mesmo modo: a exclusão de campos é uma
+lista de chaves de atributo, e uma chave listada vale para o atributo que a
+tiver, exista ele ou não no momento em que o usuário a configurou
+(Capítulo~\ref{cap:privacidade}). Esse é o critério de extensibilidade da
+Seção~\ref{sec:criterios} visto pelo lado do design, e é o que o sexto objetivo
+deste trabalho pede (Seção~\ref{sec:objetivos}).
+
+Um exemplo torna o argumento concreto: a lista de módulos de uma compilação,
+isto é, os módulos que a configuração do kernel marca para serem compilados à
+parte. Ela foi acrescentada ao kw como exemplo do argumento, e não por ser um
+dado escolhido para coleta. No kw, e só nele, ela é uma tabela ligada ao evento da compilação ou da
+instalação e o código que a preenche (Seção~\ref{sec:banco-local}). Uma
+compilação ou uma instalação passa a gerar dois registros com o mesmo
+identificador de evento, um por tabela, e a chave de repetidos do backend, que
+inclui o corpo, os mantém separados. A prova de que o exemplo passa pelo
+caminho, sem mudança no kw\_tele nem no backend, está no
+Capítulo~\ref{cap:validacao}.

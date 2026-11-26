@@ -1,0 +1,47 @@
+\begin{table}[!ht]
+  \centering
+  \newcommand*{\cA}[1][]{A#1}
+  \newcommand*{\cR}[1][]{\cellcolor{black!10}R#1}
+  \newcommand*{\cN}[1][]{\cellcolor{black!25}N#1}
+  \newcommand*{\cQ}[1][]{\textbf{?}#1}
+  \newcommand*{\cNA}[1][]{n/a#1}
+  \newcommand*{\nosso}{\textsuperscript{*}}
+  \small
+  \setlength{\tabcolsep}{3pt}
+  \begin{threeparttable}
+    \caption{Alternativas consideradas, avaliadas pelos critérios da
+      Tabela~\ref{tab:criterios}.}
+    \label{tab:alternativas}
+    \begin{tabular}{@{}>{\raggedright\arraybackslash}p{3.9cm}
+                      *{9}{>{\centering\arraybackslash}p{0.92cm}}@{}}
+      \toprule
+       & \makecell{C1\\[-2pt]\scriptsize filtro} & \makecell{C2\\[-2pt]\scriptsize extens.}
+       & \makecell{C3\\[-2pt]\scriptsize evento} & \makecell{C4\\[-2pt]\scriptsize cliente}
+       & \makecell{C5\\[-2pt]\scriptsize aberto} & \makecell{C6\\[-2pt]\scriptsize custo}
+       & \makecell{C7\\[-2pt]\scriptsize entrega} & \makecell{C8\\[-2pt]\scriptsize matur.}
+       & \makecell{C9\\[-2pt]\scriptsize reuso} \\
+      \midrule
+      OpenTelemetry (OTLP e Collector), a escolha
+        & \cA[\nosso] & \cA[\nosso] & \cA & \cA[\nosso] & \cA
+        & \cR & \cR & \cR & \cA \\
+      Endpoint HTTP/JSON próprio
+        & \cR[\nosso] & \cA[\nosso] & \cA[\nosso] & \cA[\nosso] & \cA[\nosso]
+        & \cR[\nosso] & \cR[\nosso] & \cR[\nosso] & \cN[\nosso] \\
+      Prometheus com Pushgateway
+        & \cR & \cR & \cN & \cR & \cA
+        & \cR & \cN & \cA & \cA \\
+      PostHog (plataforma de análise)
+        & \cR & \cA & \cA & \cA & \cR
+        & \cN & \cR & \cR & \cA \\
+      \bottomrule
+    \end{tabular}
+    \begin{tablenotes}
+      \footnotesize
+      \item A: atende; R: atende com ressalva; N: não atende; *: avaliação
+        deste trabalho, sobre o design ou o repositório, sem fonte externa
+        (Capítulo~\ref{cap:solucao}).
+        Critérios na Tabela~\ref{tab:criterios}.
+      \item Justificativas na Seção~\ref{sec:alternativas}.
+    \end{tablenotes}
+  \end{threeparttable}
+\end{table}

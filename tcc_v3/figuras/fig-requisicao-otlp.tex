@@ -1,0 +1,54 @@
+\begin{tikzpicture}[
+    x=1cm, y=1cm,
+    every node/.style={font=\footnotesize},
+    linha/.style={anchor=west, inner sep=1pt, font=\footnotesize\ttfamily},
+    titulo/.style={anchor=north west, inner sep=2pt, xshift=2pt, yshift=-1pt, font=\footnotesize\ttfamily\bfseries},
+    nivel/.style={draw, rounded corners=3pt, inner sep=5pt},
+    recolhido/.style={anchor=west, inner sep=1pt, font=\footnotesize\itshape, text=black!65},
+    nota/.style={anchor=west, font=\scriptsize, align=left, inner sep=1.5pt, text width=4.8cm},
+    liga/.style={semithick, densely dotted},
+  ]
+  \providecommand{\aspas}{}\renewcommand{\aspas}[1]{\textquotedbl{}#1\textquotedbl{}}
+
+  \node[linha] (http) at (0, 0) {POST \textrm{\textit{<endpoint configurado>}}};
+  \node[linha] (ct) at (0, -0.45) {Content-Type: application/json};
+
+  \node[linha] (a1) at (0.9, -2.0) {service.name \textrm{=} \aspas{kworkflow}};
+  \node[linha] (a2) at (0.9, -2.4) {service.version \textrm{=} \textrm{\textit{<versão do kw>}}};
+  \node[linha] (a3) at (0.9, -2.8) {service.instance.id \textrm{=} \textrm{\textit{<UUID aleatório>}}};
+  \node[linha] (a4) at (0.9, -3.2) {telemetry.sdk.name \textrm{=} \aspas{kw\_tele}};
+  \node[linha] (a5) at (0.9, -3.6) {telemetry.sdk.language \textrm{=} \aspas{python}};
+  \node[linha] (a6) at (0.9, -4.0) {telemetry.sdk.version \textrm{=} \textrm{\textit{<versão do kw\_tele>}}};
+  \node[nivel, fit=(a1)(a6), inner ysep=9pt, yshift=6pt] (fres) {};
+  \node[titulo] at (fres.north west) {resource.attributes};
+
+  \node[linha] (sc) at (1.3, -5.25) {scope \textrm{=} \{name: \aspas{kw\_tele}, version\}};
+  \node[linha] (r1) at (1.7, -6.25) {timeUnixNano, observedTimeUnixNano};
+  \node[linha] (r2) at (1.7, -6.65) {severityNumber \textrm{=} 9};
+  \node[linha] (r2b) at (1.7, -7.05) {severityText \textrm{=} \aspas{INFO}};
+  \node[linha] (r3) at (1.7, -7.45) {body.stringValue \textrm{=} \textrm{\textit{<tipo>}}};
+  \node[recolhido] (r4) at (1.7, -7.85) {attributes: \texttt{kw.event.*}, \texttt{kw.}\textit{<tabela>}\texttt{.*}};
+  \node[recolhido] (r4b) at (1.7, -8.2) {(Figura~\ref{fig:evento-registro})};
+  \node[nivel, fit=(r1)(r4b), inner ysep=9pt, yshift=6pt] (frec) {};
+  \node[titulo] at (frec.north west) {logRecords[0]};
+  \node[recolhido] (r5) at (1.3, -9.0) {logRecords[1], \dots};
+  \node[nivel, fit=(sc)(frec)(r5), inner ysep=9pt, yshift=6pt] (fsl) {};
+  \node[titulo] at (fsl.north west) {scopeLogs[0]};
+
+  \node[nivel, very thick, fit=(fres)(fsl), inner ysep=10pt, yshift=7pt] (frl) {};
+  \node[titulo] at (frl.north west) {resourceLogs[0]};
+
+  \coordinate (col) at ([xshift=0.6cm]frl.east);
+  \node[nota] (n0) at ([yshift=-0.2cm]col |- http) {a requisição: JSON, sem compressão,\\ao endpoint do Collector\\(o padrão termina em \texttt{/v1/logs})};
+  \node[nota] (n1) at (col |- a1) {\textbf{resource}: uma vez por requisição; quem produziu os dados};
+  \node[nota] (n2) at (col |- a3) {o identificador da instalação: aleatório, criado ao aceitar};
+  \node[nota] (n3) at ([yshift=0.15cm]col |- sc) {\textbf{scope}: o cliente que montou\\os registros};
+  \node[nota] (n4) at ([yshift=-0.3cm]col |- r1) {\textbf{logRecords}: um por linha\\de extensão; os dois tempos vão na\\granularidade de semana: o do\\evento e o do envio};
+  \node[nota] (n5) at ([yshift=-0.75cm]col |- r3) {o corpo é o tipo do registro (o nome da tabela)};
+
+  \draw[liga] (a1.east) -- (n1.west);
+  \draw[liga] (a3.east) -- (n2.west);
+  \draw[liga] (sc.east) -- (sc.east -| n3.west);
+  \draw[liga] (r1.east) -| ([xshift=-0.3cm]n4.west) -- (n4.west);
+  \draw[liga] (r3.east) -| ([xshift=-0.3cm]n5.west) -- (n5.west);
+\end{tikzpicture}

@@ -15,6 +15,15 @@
 
 \babeltags{br = brazilian, en = english}
 
+% Capa: "Orientador"/"Coorientador" em vez de "Supervisor"/"Cossupervisor",
+% que o modelo usa para TCC (pedido do Octávio, 2026-11-25).
+\makeatletter
+\addto\captionsbrazilian{%
+  \renewcommand\advisorname{Orientador}%
+  \renewcommand\coadvisorname[1]{Coorientador}%
+}
+\makeatother
+
 \addbibresource{bibliografia.bib}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% METADADOS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -25,6 +34,7 @@
 \author{Octávio Gomes Carneiro}
 
 \orientador{Prof. Dr. Paulo Roberto Miranda Meirelles}
+\coorientador{David de Barros Tadokoro}
 
 \tipotese{
   tcc,
@@ -67,10 +77,12 @@
 \input{conteudo/01-introducao}
 \input{conteudo/02-sobre-o-kworkflow}
 \input{conteudo/03-motivacao-e-objetivos}
-\input{conteudo/04-solucao-proposta}
-\input{conteudo/05-implementacao}
-\input{conteudo/06-privacidade}
-\input{conteudo/07-conclusao}
+\input{conteudo/04-opentelemetry}
+\input{conteudo/05-solucao-proposta}
+\input{conteudo/06-implementacao}
+\input{conteudo/07-validacao}
+\input{conteudo/08-privacidade}
+\input{conteudo/09-conclusao}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% REFERÊNCIAS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
