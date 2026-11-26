@@ -3,3 +3,78 @@
 \chapter{Implementação do protótipo}
 
 \label{cap:implementacao}
+
+O Capítulo~\ref{cap:solucao} disse o que cada componente faz e por quê; este
+diz como cada um foi construído, para quem quiser ler o código ou reproduzir
+o protótipo. O código está em dois repositórios: o \textit{fork} do kw, no
+ramo de telemetria \citep{kwfork_telemetry}, e o repositório deste trabalho,
+com o kw\_tele, a configuração do Collector, o backend próprio e a
+demonstração \citep{tccrepo}. As mudanças no kw ficam nesse ramo e não foram
+propostas ao projeto. O capítulo segue o caminho do dado, do kw ao backend, e
+termina nos testes.
+
+\section{As mudanças no kw}
+\label{sec:impl-kw}
+
+A telemetria entra no kw por um único ponto: o script principal carrega o
+disparador antes de escolher o comando a rodar (Programa~\ref{prog:entrada}).
+O arquivo é lido com o \texttt{.} do Bash, e não com a função
+\texttt{include} do kw, porque a função cria um processo a mais e esse trecho
+roda em todo comando. O ramo acrescenta ao kw cerca de 3,6 mil linhas em 30 arquivos,
+das quais 2,7 mil são testes; do resto, a maior parte é o disparador, com
+pouco mais de 400 linhas, e o comando \texttt{kw telemetry}, com pouco mais de
+100 \citep{kwfork_telemetry}.
+
+\begin{program}[htbp]
+  \centering
+\begin{lstlisting}[language=bash, style=wider]
+# Plain `.` instead of `include`, which forks `realpath`: this runs on every
+# command. A partial installation just skips the gate.
+if [[ -r "${KW_LIB_DIR}/lib/telemetry.sh" ]]; then
+  . "${KW_LIB_DIR}/lib/telemetry.sh" --source-only &&
+    telemetry_gate "$action"
+fi
+\end{lstlisting}
+  \caption{O ponto de entrada do disparador no script principal do kw, antes
+    da escolha do comando; a última chamada foi quebrada em duas linhas para
+    caber na página \citep{kwfork_telemetry}.}
+  \label{prog:entrada}
+\end{program}
+
+No banco, o arquivo do esquema, \texttt{database/kwdb.sql}, ganhou a coluna de
+marca de envio na tabela de eventos, a tabela da lista de módulos e uma
+\textit{view} de inserção com um gatilho que grava o evento, a execução e os
+módulos numa instrução só. É o gatilho que torna a escrita atômica: uma
+segunda chamada ao \texttt{sqlite3} não saberia o identificador do evento que
+a primeira acabou de criar. A gravação dos módulos é chamada pelo
+\texttt{build.sh} e pelo \texttt{deploy.sh}, com sucesso ou falha. A
+verificação do esquema, para os bancos já instalados, acrescenta a coluna e um
+índice dos eventos pendentes e reaplica o arquivo do esquema se a \textit{view} da lista de módulos faltar. Por fim, os comandos do kw passaram a esperar até 5 segundos quando o
+banco está ocupado, para que a escrita do kw não falhe enquanto o kw\_tele
+marca linhas.
+
+O disparador segue a ordem da Figura~\ref{fig:disparador}. Ele lê a configuração e o estado com o próprio Bash e, no caminho comum, só
+consulta o banco para contar os eventos pendentes; a verificação do esquema
+roda apenas antes de perguntar o consentimento ou de disparar o kw\_tele. Para
+disparar, ele usa \texttt{setsid}, que separa o kw\_tele do terminal, e
+\texttt{timeout}, que limita a sua duração. Ele nunca
+escreve na saída do comando nem muda o código de saída dele; a pergunta de
+consentimento vai para a saída de erro.
+
+O comando \texttt{kw telemetry} reúne o
+que o usuário faz com a telemetria: ver o que foi gravado e enviado, enviar
+ou ver o próximo lote sem enviar, aceitar ou recusar, e mudar a configuração;
+o ramo acrescenta a página de manual correspondente. A configuração,
+\texttt{etc/telemetry.config}, tem as chaves do comportamento descrito na
+Seção~\ref{sec:cliente}: o intervalo entre envios, o tempo mínimo entre
+tentativas, o tamanho do lote, o endereço e a lista de exclusão, que vem vazia. O
+consentimento fica preso ao endereço aceito: se o endereço muda à mão, o kw
+pergunta de novo.
+
+O \texttt{setup.sh} do kw instala o kw\_tele. O caminho previsto é baixar a
+versão publicada no repositório deste trabalho; enquanto não há versão
+publicada, o kw\_tele é construído a partir de uma cópia local do repositório,
+indicada por uma variável de ambiente. Numa reinstalação, o kw\_tele antigo é mantido até o novo ser instalado. Se a instalação falha, o \texttt{setup.sh}
+avisa e continua, e o kw funciona sem telemetria, porque o disparador vê que o
+kw\_tele não está instalado. A única dependência nova declarada para as
+distribuições é o Python.
