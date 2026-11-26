@@ -78,3 +78,178 @@ indicada por uma variável de ambiente. Numa reinstalação, o kw\_tele antigo �
 avisa e continua, e o kw funciona sem telemetria, porque o disparador vê que o
 kw\_tele não está instalado. A única dependência nova declarada para as
 distribuições é o Python.
+
+\section{O kw\_tele}
+\label{sec:impl-kwtele}
+
+O kw\_tele é um programa em Python, a partir da versão 3.10, feito só com a
+biblioteca padrão: \texttt{sqlite3} para o banco, \texttt{json} para o
+documento e \texttt{urllib} para o envio. Não há dependência a instalar, e a
+versão mínima é a do Python do Ubuntu 22.04. O código é empacotado num único
+arquivo pelo \texttt{zipapp} do Python, que junta o código num arquivo zip que
+o interpretador executa diretamente, com um ponto de entrada e uma linha que
+indica o interpretador \citep{python310_zipapp}; é esse arquivo que o
+\texttt{setup.sh} do kw instala (Seção~\ref{sec:impl-kw}).
+
+O usuário não chama o kw\_tele diretamente: o \texttt{kw telemetry} chama os
+seus quatro subcomandos, \texttt{upload}, \texttt{consent}, \texttt{info} e
+\texttt{config}. Duas opções deixam o usuário conferir o que sai:
+\texttt{upload --dry-run} mostra o documento do próximo lote sem enviá-lo, e
+\texttt{info --export}, o que já foi enviado. O código de saída de cada execução distingue sucesso, uso errado, envio
+recusado por falta de consentimento, falha de envio, problema no banco e erro
+interno; o kw\_tele registra o resultado no estado, que o disparador lê.
+
+O código se divide por papel. A leitura do banco fica em dois módulos: um abre
+a conexão e mantém as transações curtas, e o outro lê o esquema e acha as
+tabelas de extensão pela chave estrangeira para o evento
+(Programa~\ref{prog:reflexao}), trocando as colunas que apontam para uma
+tabela de nomes pelo nome. A montagem fica em outros dois: um monta o registro
+OTLP e o outro reduz a granularidade do tempo e guarda as chaves que o usuário
+não pode excluir. O envio fica num módulo só, que faz a requisição e classifica
+a resposta. O resto é controle: os subcomandos, a trava, o prazo, e a leitura
+da configuração e do estado, no mesmo formato que o disparador lê em Bash.
+
+\begin{program}[htbp]
+  \centering
+\begin{lstlisting}[language=python, style=wider]
+def _extension(conn, table):
+    foreign_keys = _foreign_keys(conn, table)
+    parent = foreign_keys.get("id")
+    if parent is None or parent[0].lower() != "event":
+        return None
+    columns = tuple(
+        _column(conn, table, name, foreign_keys)
+        for name in _column_names(conn, table)
+        if name != "id" and include(table, name)
+    )
+    return Extension(table, columns)
+\end{lstlisting}
+  \caption{Como o kw\_tele reconhece uma tabela de extensão: a coluna
+    \texttt{id} tem de ser chave estrangeira para \texttt{event}
+    \citep{tccrepo}.}
+  \label{prog:reflexao}
+\end{program}
+
+Três garantias da Seção~\ref{sec:cliente} dependem de detalhes de construção.
+A primeira é que o envio tem fim: cada conexão tem tempo limite de
+10 segundos, a execução inteira tem prazo de 60 segundos, imposto por um sinal de alarme que interrompe até código da biblioteca padrão,
+dentro do limite que o disparador já impõe de fora (Seção~\ref{sec:impl-kw}). A segunda é que dois envios não correm juntos:
+dois comandos seguidos do kw podem disparar dois kw\_tele, e uma trava de
+arquivo faz o segundo sair sem enviar. A terceira é que nada é marcado sem
+confirmação: a marca de envio é gravada numa transação curta, só depois da
+resposta de sucesso, e confere o identificador, a data e a hora de cada
+evento (Seção~\ref{sec:banco-local}). Nenhuma transação fica aberta durante a requisição.
+
+\section{O Collector e o backend próprio}
+\label{sec:impl-backend}
+
+O Collector é a imagem oficial do OpenTelemetry, na versão 0.121.0
+\citep{otel_collector_v0_121_0}, sem nenhum código deste trabalho: tudo o que
+ele faz está num arquivo de configuração de cerca de 30 linhas
+(Programa~\ref{prog:collector}). O receptor aceita OTLP sobre HTTP, o limite de memória recusa carga acima de 256 MiB, com margem de 64 MiB para
+picos, o processador de recurso só marca
+por onde o registro passou e o exportador repassa ao backend próprio, em JSON,
+com fila e novas tentativas desligadas (Seção~\ref{sec:backend}). O prazo do
+exportador, 8 segundos, fica abaixo do tempo limite de cada conexão do
+kw\_tele, 10 segundos: com o backend lento, o Collector desiste e responde com
+erro antes de a conexão do cliente expirar, e o kw\_tele vê uma falha clara e
+mantém as linhas pendentes.
+
+\begin{program}[htbp]
+  \centering
+\begin{lstlisting}[style=wider]
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 256
+    spike_limit_mib: 64
+  resource:
+    attributes:
+      - key: pipeline.hop
+        value: otel-collector
+        action: upsert
+exporters:
+  otlphttp/sinklogs:
+    logs_endpoint: http://sink:8000/v1/logs
+    encoding: json
+    timeout: 8s
+    sending_queue:
+      enabled: false
+    retry_on_failure:
+      enabled: false
+service:
+  pipelines:
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, resource]
+      exporters: [otlphttp/sinklogs]
+\end{lstlisting}
+  \caption{A configuração do Collector, \texttt{server/collector/config.yaml},
+    sem os comentários \citep{tccrepo}.}
+  \label{prog:collector}
+\end{program}
+
+O backend próprio é um programa em Python, com o FastAPI
+\citep{fastapi_0_115_6} e o servidor uvicorn \citep{uvicorn_0_34_0}, que
+roda num contêiner e guarda os dados num arquivo SQLite num volume. O mesmo
+programa atende a entrada, chamada só pelo Collector, as três rotas de
+consulta (Seção~\ref{sec:consulta}) e uma rota de saúde, que o orquestrador
+usa para só subir o Collector depois do backend. Da estrutura da
+Figura~\ref{fig:esquema-backend}, dois detalhes não aparecem no desenho. A
+chave de repetição é guardada como um resumo SHA-256 da instalação, do corpo e
+do identificador do evento, numa coluna única; um registro sem identificador
+usa uma chave formada pelo tempo e pelos atributos. E um índice sobre o tipo,
+a instalação e o identificador do evento sustenta a junção da consulta.
+
+A consulta tem dois tetos: devolve até 1000 grupos por resposta, marcando a
+resposta como truncada quando passa disso, e junta até 63 tipos, porque o
+SQLite não aceita mais de 64 tabelas numa junção \citep{sqlite_limits} e uma
+delas é a do tipo pedido. Os nomes de tipo e de atributo que chegam na
+consulta nunca entram no SQL como texto: vão sempre como parâmetros, o que
+impede que um nome monte uma consulta diferente da prevista.
+
+Os dois serviços sobem juntos com o Docker Compose, o Collector na porta 4318
+e o backend na 8000. Por padrão, as duas portas ficam ligadas só ao endereço
+local da máquina; expor o caminho à rede é uma variável, e nenhuma das rotas
+tem autenticação nem TLS (Capítulo~\ref{cap:privacidade}). A demonstração de
+ponta a ponta do Capítulo~\ref{cap:validacao} usa essa mesma montagem.
+
+\section{Testes}
+\label{sec:impl-testes}
+
+Cada componente tem a sua suíte de testes, escrita na ferramenta do próprio
+projeto. As do kw usam o \texttt{shunit2}, como o resto do kw, e rodam num
+contêiner Linux, porque o kw só funciona nesse sistema; as do kw\_tele e do
+backend usam o \texttt{pytest}. O caminho inteiro, do kw à consulta, fica para o
+Capítulo~\ref{cap:validacao}.
+
+No kw, os testes do disparador passam por cada estado de consentimento e
+conferem a ordem da Figura~\ref{fig:disparador}: que ele só pergunta com um
+terminal, que escreve a pergunta na saída de erro e nada na saída do comando,
+que dispara o kw\_tele só na hora certa, sem esperar por ele, e que respeita
+o tempo mínimo entre tentativas.
+
+Os testes da pergunta conferem que cada
+resposta grava o que deve e que, sem terminal, nada é gravado. Os do esquema
+conferem que um banco antigo ganha a coluna e o índice sem perder as linhas,
+e os da lista de módulos, que o evento, a execução e os módulos são gravados juntos, na compilação e na instalação do kernel, com sucesso e falha. Os do
+\texttt{setup.sh} conferem que uma instalação que falha mantém o kw\_tele que
+já estava instalado. A suíte inteira do kw passa no ramo de telemetria como
+no projeto original, com as mesmas falhas que já existem nele e nenhuma nova,
+e as ferramentas de estilo que o kw usa não acusam nada novo.
+
+No kw\_tele, os testes cobrem o consentimento, a montagem do registro, a
+granularidade de semana de todo tempo que sai, o envio, com a confirmação, a
+divisão de um lote recusado, o prazo e a trava, e os códigos de saída. A
+montagem é testada sobre o arquivo de esquema real do kw, para que uma tabela
+nova ligada ao evento seja descoberta sem mudança no cliente. Os testes rodam
+no Python 3.10, a versão mínima. No backend, os testes cobrem a entrada, com os
+registros malformados guardados à parte, os repetidos descartados e a granularidade de semana reaplicada ao tempo que
+chega; as três rotas de consulta, com os filtros, a junção e os
+tetos; e um tipo de registro novo, que aparece na consulta sem mudança no
+backend.
