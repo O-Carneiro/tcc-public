@@ -1,0 +1,30 @@
+\begin{table}[htbp]
+  \centering
+  \caption{Os comandos de telemetria do kw. Cada um chama o kw\_tele
+    \citep{kwfork_telemetry}.}
+  \label{tab:comandos-telemetria}
+  \sbox0{\texttt{kw telemetry <comando>}}%
+  \providecommand{\kwopcao}{}\renewcommand{\kwopcao}[1]{\hspace{1.5em}\texttt{-{}-#1}}%
+  \begin{tabular}{@{}l>{\raggedright\arraybackslash\hyphenpenalty=10000}p{\dimexpr\textwidth-\wd0-2\tabcolsep\relax}@{}}
+    \toprule
+    \texttt{kw telemetry <comando>} & O que faz \\
+    \midrule
+    \texttt{upload}             & envia agora os eventos pendentes \\
+    \kwopcao{dry-run}           & mostra o documento JSON do próximo lote, sem enviar \\
+    \addlinespace
+    \texttt{consent}            & mostra se a telemetria está ligada; se não está e o terminal é interativo,
+                                  pergunta ao usuário \\
+    \addlinespace
+    \texttt{opt-in}             & liga a telemetria; os eventos já registrados não são enviados \\
+    \kwopcao{include-history}   & liga a telemetria e inclui nos próximos envios os eventos já registrados \\
+    \addlinespace
+    \texttt{opt-out}            & desliga a telemetria \\
+    \addlinespace
+    \texttt{info}               & mostra o que é coletado e quantos eventos foram enviados \\
+    \kwopcao{export}            & exporta, em JSON, o que já foi enviado \\
+    \addlinespace
+    \texttt{config}             & mostra ou muda o intervalo de envio, o tempo mínimo entre tentativas e o
+                                  tamanho do lote \\
+    \bottomrule
+  \end{tabular}
+\end{table}
