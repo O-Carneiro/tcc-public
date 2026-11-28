@@ -7,11 +7,13 @@
 O Capítulo~\ref{cap:solucao} disse o que cada componente faz e por quê; este
 mostra onde cada um está no código, para quem quiser abrir os repositórios e
 acompanhar. O código está em dois repositórios: o \textit{fork} do kw, no ramo
-de telemetria \citep{kwfork_telemetry}, e o repositório deste trabalho, com o
-kw\_tele, a configuração do Collector, o backend próprio e a demonstração
-\citep{tccrepo}. As mudanças no kw ficam nesse ramo e não foram propostas ao
-projeto. Os trechos são do commit \texttt{a6944b5} do ramo de telemetria e do
-commit \texttt{74e93c2} do repositório deste trabalho, e cada legenda indica o
+de telemetria \citep{kwfork_telemetry}, e o kw\_telemetry, com o kw\_tele, a
+configuração do Collector, o backend próprio e a demonstração
+\citep{kwtelemetry_repo}. O repositório do texto deste trabalho traz os dois
+como submódulos \citep{tccrepo}. As mudanças no kw ficam nesse ramo e não foram
+propostas ao projeto. Os trechos são do commit \texttt{3092757} do ramo de
+telemetria e do commit \texttt{e04ae44} do kw\_telemetry, a versão 0.1.0, e
+cada legenda indica o
 arquivo. Os comentários dos trechos são os do próprio código, e o texto remete
 aos números de linha de cada trecho. Linhas omitidas aparecem como
 \texttt{[...]} dentro de um comentário da linguagem, e linhas longas foram
@@ -345,10 +347,10 @@ hora, e o tamanho do lote, 500 eventos, usados no
 Programa~\ref{prog:gate-tempo}.
 
 Por fim, o \texttt{setup.sh} do kw instala o kw\_tele com a função
-\texttt{install\_kw\_tele}. Com a variável \texttt{KW\_TELE\_PATH} apontando
-para uma cópia do repositório deste trabalho, ele constrói o kw\_tele a partir
-dela; sem a variável, baixa a versão publicada no repositório deste trabalho.
-Enquanto não há versão publicada, o caminho que funciona é o primeiro. Se a
+\texttt{install\_kw\_tele}. Por padrão, ele baixa a versão publicada do
+kw\_tele, um único arquivo, no kw\_telemetry. Com a variável
+\texttt{KW\_TELE\_PATH} apontando para o diretório \texttt{client/kw\_tele}
+de uma cópia do kw\_telemetry, ele constrói o kw\_tele a partir dela. Se a
 instalação falha, o \texttt{setup.sh} avisa e continua, e o kw funciona sem
 telemetria, porque o passo 2 do disparador vê que o kw\_tele não está
 instalado. Numa reinstalação, o kw\_tele antigo é mantido até o novo ser
@@ -358,8 +360,8 @@ Python.
 \section{O kw\_tele}
 \label{sec:impl-kwtele}
 
-O kw\_tele está em \texttt{client/kw\_tele} no repositório deste trabalho
-\citep{tccrepo}. É um programa em Python, a partir da versão 3.10, feito só
+O kw\_tele está em \texttt{client/kw\_tele} no kw\_telemetry
+\citep{kwtelemetry_repo}. É um programa em Python, a partir da versão 3.10, feito só
 com a biblioteca padrão: \texttt{sqlite3} para o banco, \texttt{json} para o
 documento e \texttt{urllib} para o envio. O usuário não o chama diretamente, porque
 cada comando do \texttt{kw telemetry} chama um subcomando do kw\_tele
@@ -376,7 +378,7 @@ tabelas são extensões do evento (Programa~\ref{prog:reflexao}).
 
 \begin{programruledcaption}{Como o kw\_tele reconhece uma tabela de extensão e nomeia os seus
     atributos, em \texttt{client/\allowbreak{}kw\_tele/\allowbreak{}src/\allowbreak{}kw\_tele/\allowbreak{}reflect.py}
-    \citep{tccrepo}.
+    \citep{kwtelemetry_repo}.
     \label{prog:reflexao}}
 \begin{lstlisting}[language=python, style=wider]
 def _column(conn, table, name, foreign_keys):
@@ -426,7 +428,7 @@ pendentes do lote, em \texttt{events}, com os nomes das colunas de
 \texttt{event} em \texttt{names}.
 
 \begin{programruledcaption}{Do evento aos registros, o laço central de
-    \texttt{client/\allowbreak{}kw\_tele/\allowbreak{}src/\allowbreak{}kw\_tele/\allowbreak{}payload.py} \citep{tccrepo}.
+    \texttt{client/\allowbreak{}kw\_tele/\allowbreak{}src/\allowbreak{}kw\_tele/\allowbreak{}payload.py} \citep{kwtelemetry_repo}.
     \label{prog:payload}}
 \begin{lstlisting}[language=python, style=wider]
 # [...]
@@ -489,7 +491,7 @@ do comando de exportação e o documento que embrulha os registros. O terceiro
 módulo é o envio, em \texttt{commands.py} (Programa~\ref{prog:envio}).
 
 \begin{programruledcaption}{O envio, em três trechos de
-    \texttt{client/\allowbreak{}kw\_tele/\allowbreak{}src/\allowbreak{}kw\_tele/\allowbreak{}commands.py} \citep{tccrepo}.
+    \texttt{client/\allowbreak{}kw\_tele/\allowbreak{}src/\allowbreak{}kw\_tele/\allowbreak{}commands.py} \citep{kwtelemetry_repo}.
     Nos três, a indentação foi reduzida.
     \label{prog:envio}}
 \begin{lstlisting}[language=python, style=wider]
@@ -541,7 +543,7 @@ O quarto, \texttt{db.py}, grava a marca de envio
 (Programa~\ref{prog:marca}).
 
 \begin{programruledcaption}{A marca de envio, em
-    \texttt{client/\allowbreak{}kw\_tele/\allowbreak{}src/\allowbreak{}kw\_tele/\allowbreak{}db.py} \citep{tccrepo}.
+    \texttt{client/\allowbreak{}kw\_tele/\allowbreak{}src/\allowbreak{}kw\_tele/\allowbreak{}db.py} \citep{kwtelemetry_repo}.
     \label{prog:marca}}
 \begin{lstlisting}[language=python, style=wider]
 def mark_sent(conn, marks, now):
@@ -571,15 +573,15 @@ feita em bytes, como explica o comentário omitido da função. Só são marcado
 \section{O Collector e o backend próprio}
 \label{sec:impl-backend}
 
-O Collector e o backend próprio estão em \texttt{server/} no repositório deste
-trabalho \citep{tccrepo}. O Collector é a imagem oficial do OpenTelemetry, na
+O Collector e o backend próprio estão em \texttt{server/} no kw\_telemetry
+\citep{kwtelemetry_repo}. O Collector é a imagem oficial do OpenTelemetry, na
 versão 0.121.0 \citep{otel_collector_v0_121_0}, sem nenhum código deste
 trabalho, e tudo o que ele faz está num arquivo de configuração, que tem 30 linhas
 sem os comentários
 (Programa~\ref{prog:collector}).
 
 \begin{programruledcaption}{A configuração do Collector, \texttt{server/\allowbreak{}collector/\allowbreak{}config.yaml},
-    sem os comentários do arquivo \citep{tccrepo}.
+    sem os comentários do arquivo \citep{kwtelemetry_repo}.
     \label{prog:collector}}
 \begin{lstlisting}[style=wider]
 receivers:
@@ -636,7 +638,7 @@ consulta (Seção~\ref{sec:consulta}) e uma rota de saúde. A entrada
 (Programa~\ref{prog:entrada-backend}) segue a Figura~\ref{fig:backend-entrada}.
 
 \begin{programruledcaption}{A entrada do backend próprio, em \texttt{server/\allowbreak{}sink/\allowbreak{}app.py}
-    \citep{tccrepo}.
+    \citep{kwtelemetry_repo}.
     \label{prog:entrada-backend}}
 \begin{lstlisting}[language=python, style=wider]
 def _store_logs(body, gz):
@@ -706,7 +708,7 @@ Programa~\ref{prog:consulta} mostra uma consulta à terceira rota, a da
 Figura~\ref{fig:consulta}, e o começo da resposta.
 
 \begin{programruledcaption}{Uma consulta à rota de agrupamento e o começo da resposta, no
-    formato que \texttt{server/\allowbreak{}sink/\allowbreak{}app.py} devolve \citep{tccrepo}, reformatado para leitura. Valores
+    formato que \texttt{server/\allowbreak{}sink/\allowbreak{}app.py} devolve \citep{kwtelemetry_repo}, reformatado para leitura. Valores
     ilustrativos; os demais grupos omitidos.
     \label{prog:consulta}}
 \begin{lstlisting}[style=wider]
@@ -755,8 +757,8 @@ Linux, porque o kw só funciona nesse sistema; as do kw\_tele e do backend usam
 o \texttt{pytest} (Programa~\ref{prog:rodar}). O caminho inteiro, do kw à
 consulta, fica para o Capítulo~\ref{cap:validacao}.
 
-\begin{programruledcaption}{Como rodar as três suítes, a partir de um clone do repositório deste
-    trabalho \citep{tccrepo}.
+\begin{programruledcaption}{Como rodar as três suítes, a partir de um clone do repositório do
+    texto deste trabalho \citep{tccrepo}.
     \label{prog:rodar}}
 \begin{lstlisting}[language=bash, style=wider]
 git clone --recurse-submodules https://github.com/O-Carneiro/tcc-public %*\label{lin:rod-clone}*)
@@ -767,19 +769,19 @@ cd tcc-public
 'unit/telemetry_dispatch_test|unit/setup_kw_tele_test|'\
 'unit/build_modules_test' )
 
-( cd client/kw_tele && python3 -m venv .venv && %*\label{lin:rod-kwtele}*)
+( cd kw_telemetry/client/kw_tele && python3 -m venv .venv && %*\label{lin:rod-kwtele}*)
     .venv/bin/pip install -r requirements-dev.txt &&
     .venv/bin/python -m pytest -q -m "not slow" )
 
-( cd server/sink && python3 -m venv .venv && %*\label{lin:rod-sink}*)
+( cd kw_telemetry/server/sink && python3 -m venv .venv && %*\label{lin:rod-sink}*)
     .venv/bin/pip install -r requirements.txt -r requirements-dev.txt &&
     .venv/bin/python -m pytest -q )
 \end{lstlisting}
 \end{programruledcaption}
 
-O kw entra no repositório deste trabalho como submódulo, por isso o clone da
-linha~\ref{lin:rod-clone} traz os submódulos, porque sem eles os testes do kw\_tele
-não acham o esquema real do kw. Cada suíte roda no seu diretório. A do kw, na
+O repositório do texto traz o kw e o kw\_telemetry como submódulos, lado a
+lado, e o clone da linha~\ref{lin:rod-clone} os traz junto. Sem o kw ao lado,
+os testes do kw\_tele não acham o esquema real do kw. Cada suíte roda no seu diretório. A do kw, na
 linha~\ref{lin:rod-kw}, usa o executor de testes do próprio kw, com os cinco
 arquivos de teste da telemetria, e pede as dependências de teste do kw, entre
 elas o \texttt{shunit2} e o \texttt{sqlite3}. As do kw\_tele e do backend, nas
@@ -796,7 +798,7 @@ registros no kw\_tele é testada sobre o arquivo de esquema real do kw
 (Programa~\ref{prog:teste-kwtele}).
 
 \begin{programruledcaption}{Um teste do kw\_tele sobre o esquema real do kw, em
-    \texttt{client/\allowbreak{}kw\_tele/\allowbreak{}tests/\allowbreak{}test\_payload.py} \citep{tccrepo}.
+    \texttt{client/\allowbreak{}kw\_tele/\allowbreak{}tests/\allowbreak{}test\_payload.py} \citep{kwtelemetry_repo}.
     \label{prog:teste-kwtele}}
 \begin{lstlisting}[language=python, style=wider]
 class TestExtensibility(CliCase):
