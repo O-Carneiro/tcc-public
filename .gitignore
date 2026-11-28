@@ -45,7 +45,7 @@ hyperxindy.xdy
 tcc_v3/main.pdf
 
 # ---------------------------------------------------------------------------
-# Servidor (server/): ver também server/.gitignore
+# Python (o código está no submódulo kw_telemetry/, que tem o seu próprio .gitignore)
 # ---------------------------------------------------------------------------
 __pycache__/
 *.pyc

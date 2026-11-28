@@ -1,6 +1,0 @@
-# generate.py and plot.py need only matplotlib; test_generate.py also imports sink/app.py,
-# so install ../sink/requirements.txt (fastapi, uvicorn) as well.
-matplotlib
-fastapi
-httpx
-pytest

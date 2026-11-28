@@ -2,3 +2,7 @@
 	path = kworkflow
 	url = https://github.com/O-Carneiro/kworkflow.git
 	branch = telemetry
+[submodule "kw_telemetry"]
+	path = kw_telemetry
+	url = https://github.com/O-Carneiro/kw_telemetry.git
+	branch = main
