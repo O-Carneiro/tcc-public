@@ -45,7 +45,7 @@ hyperxindy.xdy
 tcc_v3/main.pdf
 
 # ---------------------------------------------------------------------------
-# Protótipo (toy_otel_showcase): ver também toy_otel_showcase/.gitignore
+# Servidor (server/): ver também server/.gitignore
 # ---------------------------------------------------------------------------
 __pycache__/
 *.pyc

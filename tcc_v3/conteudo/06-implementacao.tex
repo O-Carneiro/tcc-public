@@ -323,11 +323,12 @@ um ponto de entrada e uma linha que indica o interpretador
 \texttt{setup.sh} instala.
 
 \begin{programruledcaption}{O empacotamento, em \texttt{client/\allowbreak{}kw\_tele/\allowbreak{}build.sh}
-    \citep{tccrepo}.
-    a checagem
-    de argumentos omitida.
+    \citep{tccrepo}, sem o cabeçalho e a checagem de argumentos.
     \label{prog:build}}
 \begin{lstlisting}[language=bash, style=wider]
+# [...]
+# » root: o diretório do build.sh; $1: o arquivo a gerar
+root=$(cd "$(dirname "$0")" && pwd)
 stage=$(mktemp -d)
 trap 'rm -rf "$stage"' EXIT
 # Stage the sources so stray bytecode caches never end up in the archive.
@@ -360,7 +361,7 @@ nome, com o sufixo \texttt{\_id} retirado. É por isso que
 \begin{lstlisting}[language=python, style=wider]
 def _column(conn, table, name, foreign_keys):
     target = foreign_keys.get(name)
-    # » a coluna aponta para uma tabela com "name"? então manda o nome
+    # » a coluna aponta para o id de uma tabela com "name"? então manda o nome
     if target and target[1] in ("id", None) and \
             "name" in _column_names(conn, target[0]):
         lookup = "(SELECT {name} FROM {ref} WHERE {id} = {table}.{column})" \
@@ -398,12 +399,19 @@ usuário saem do registro, exceto as duas chaves protegidas, o identificador e
 o tipo.
 
 \begin{programruledcaption}{Do evento aos registros, o laço central de
-    \texttt{client/\allowbreak{}kw\_tele/\allowbreak{}src/\allowbreak{}kw\_tele/\allowbreak{}payload.py} \citep{tccrepo}.
-    a consulta ao banco, o
-    caminho de exportação e o documento externo omitidos.
+    \texttt{client/\allowbreak{}kw\_tele/\allowbreak{}src/\allowbreak{}kw\_tele/\allowbreak{}payload.py} \citep{tccrepo},
+    sem a consulta ao banco, o caminho de exportação e o documento externo.
     \label{prog:payload}}
 \begin{lstlisting}[language=python, style=wider]
+# [...]
+# » events: as linhas pendentes do lote; names: as colunas de event
+# » as linhas de cada extensão, do primeiro ao último id do lote
+extension_rows = _extension_rows(conn, schema.extensions, first_id, last_id)
+# » o instante do envio, também com granularidade de semana, em nanossegundos
+observed = str(coarsen.week_instant(resource.now) * 10**9)
 dropped = exclude - coarsen.PROTECTED_KEYS   # » kw.event.id e .kind ficam
+
+records, marks = [], []
 
 for *values, sent_at, raw_date, raw_time in events:
     event = dict(zip(names, values))
@@ -424,6 +432,7 @@ for *values, sent_at, raw_date, raw_time in events:
     ] or [("event", [])]
     for kind, extra in matches:
         pairs = event_attributes + [("kw.event.kind", kind)] + extra
+        # [...]
         records.append({
             "timeUnixNano": _time_unix_nano(moment),   # » instante da semana
             "observedTimeUnixNano": observed,          # » idem, do envio
@@ -446,11 +455,12 @@ sem enviar. E, a cada lote, o consentimento é lido de novo, para que um
 
 \begin{programruledcaption}{O envio, em três trechos de
     \texttt{client/\allowbreak{}kw\_tele/\allowbreak{}src/\allowbreak{}kw\_tele/\allowbreak{}commands.py} \citep{tccrepo}:
-    a trava, o prazo e o consentimento relido a cada lote (\texttt{env} é
-    \texttt{self.env}).
+    a trava, o prazo e o consentimento relido a cada lote. Nos dois últimos,
+    a indentação foi reduzida.
     \label{prog:envio}}
 \begin{lstlisting}[language=python, style=wider]
 def run(self):
+    env = self.env
     config = settings.load_config(env.config_path)
     if config.effective_consent != "yes":
         return EXIT_REFUSED
@@ -461,18 +471,26 @@ def run(self):
             return EXIT_OK
         return self._locked(config)
 
-# » dentro de _locked: o prazo de 60 s em volta de todo o envio
-with limit(UPLOAD_DEADLINE_SECONDS):
-    return self._send_all(before, failures)
+# [...]
+# » em _locked: o prazo de 60 s em volta de todo o envio;
+# » before: o estado lido; failures: as falhas seguidas, contando esta
+try:
+    with limit(UPLOAD_DEADLINE_SECONDS):
+        return self._send_all(before, failures)
+except DeadlineExceeded:
+    return self._on_deadline(failures)
 
-# » dentro de _send_all, a cada lote:
+# [...]
+# » em _send_all, a cada lote:
 while True:
-    config = settings.load_config(env.config_path)
+    config = settings.load_config(env.config_path)   # » relido a cada lote
     if config.effective_consent != "yes":
-        # A consent change is not a failure.   # » relido a cada lote
+        # A consent change is not a failure.
+        # » o estado volta ao que era antes deste envio
         self._record(before.last_status, before.consecutive_failures)
         return EXIT_REFUSED
-    # [...] monta o lote, envia, e só marca depois do sucesso
+    # [...]
+    # » monta o lote, envia, e só marca depois do sucesso
 \end{lstlisting}
 \end{programruledcaption}
 
@@ -494,12 +512,12 @@ def mark_sent(conn, marks, now):
     reused after a delete. The comparison is on raw bytes: text decoded with
     errors="replace" would never match.
     """
-    with conn:   # » uma transação curta, depois do sucesso
+    with conn:   # » uma transação curta; quem chama já teve o sucesso
         cursor = conn.executemany(
             "UPDATE event SET sent_at = :now WHERE id = :id"
             " AND CAST(date AS BLOB) = :date"
             " AND CAST(time AS BLOB) IS :time"
-            " AND (sent_at IS NULL OR sent_at = -1)",   # » pendente ou fora
+            " AND (sent_at IS NULL OR sent_at = -1)",   # » pendente ou excluído
             [{"now": now, "id": i, "date": d, "time": t} for i, d, t in marks],
         )
         return cursor.rowcount
