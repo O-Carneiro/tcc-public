@@ -7,24 +7,22 @@
   \providecommand{\kwopcao}{}\renewcommand{\kwopcao}[1]{\hspace{1.5em}\texttt{-{}-#1}}%
   \begin{tabular}{@{}l>{\raggedright\arraybackslash\hyphenpenalty=10000}p{\dimexpr\textwidth-\wd0-2\tabcolsep\relax}@{}}
     \toprule
-    \texttt{kw telemetry <comando>} & O que faz \\
+    \texttt{kw telemetry <comando>} & Descrição \\
     \midrule
-    \texttt{upload}             & envia agora os eventos pendentes \\
-    \kwopcao{dry-run}           & mostra o documento JSON do próximo lote, sem enviar \\
-    \addlinespace
-    \texttt{consent}            & mostra se a telemetria está ligada; se não está e o terminal é interativo,
-                                  pergunta ao usuário \\
-    \addlinespace
-    \texttt{opt-in}             & liga a telemetria; os eventos já registrados não são enviados \\
-    \kwopcao{include-history}   & liga a telemetria e inclui nos próximos envios os eventos já registrados \\
-    \addlinespace
-    \texttt{opt-out}            & desliga a telemetria \\
-    \addlinespace
-    \texttt{info}               & mostra o que é coletado e quantos eventos foram enviados \\
-    \kwopcao{export}            & exporta, em JSON, o que já foi enviado \\
-    \addlinespace
-    \texttt{config}             & mostra ou muda o intervalo de envio, o tempo mínimo entre tentativas e o
-                                  tamanho do lote \\
+    \texttt{upload}             & Envia agora os eventos pendentes \\
+    \kwopcao{dry-run}           & Mostra o JSON do próximo lote, sem enviar \\
+    \cmidrule(l{1.5em}r{1.5em}){1-2}
+    \texttt{consent}            & Mostra o estado; se desligada e há terminal, pergunta \\
+    \cmidrule(l{1.5em}r{1.5em}){1-2}
+    \texttt{opt-in}             & Liga a telemetria, sem os eventos já registrados \\
+    \kwopcao{include-history}   & Liga a telemetria, com os eventos já registrados \\
+    \cmidrule(l{1.5em}r{1.5em}){1-2}
+    \texttt{opt-out}            & Desliga a telemetria \\
+    \cmidrule(l{1.5em}r{1.5em}){1-2}
+    \texttt{info}               & Mostra o que é coletado e o estado dos envios \\
+    \kwopcao{export}            & Exporta em JSON o que já foi enviado \\
+    \cmidrule(l{1.5em}r{1.5em}){1-2}
+    \texttt{config}             & Mostra ou muda os tempos de envio e o tamanho do lote \\
     \bottomrule
   \end{tabular}
 \end{table}

@@ -10,33 +10,32 @@ acompanhar. O código está em dois repositórios: o \textit{fork} do kw, no ram
 de telemetria \citep{kwfork_telemetry}, e o repositório deste trabalho, com o
 kw\_tele, a configuração do Collector, o backend próprio e a demonstração
 \citep{tccrepo}. As mudanças no kw ficam nesse ramo e não foram propostas ao
-projeto. Os trechos são do commit \texttt{a67170d} do ramo de telemetria e do
-commit \texttt{b54e970} do repositório deste trabalho, e cada legenda indica o
-arquivo. Nos trechos, os comentários marcados com \guillemotright{} são deste
-texto; os outros são do próprio código. Linhas omitidas aparecem como
-\texttt{[...]}, e linhas longas foram quebradas para caber na página. O
-capítulo segue o caminho do dado, do kw ao backend, e termina nos testes.
+projeto. Os trechos são do commit \texttt{a6944b5} do ramo de telemetria e do
+commit \texttt{74e93c2} do repositório deste trabalho, e cada legenda indica o
+arquivo. Os comentários dos trechos são os do próprio código, e o texto remete
+aos números de linha de cada trecho. Linhas omitidas aparecem como
+\texttt{[...]} dentro de um comentário da linguagem, e linhas longas foram
+quebradas para caber na página. O capítulo segue o caminho do dado, do kw ao
+backend, e termina nos testes.
 
 \section{As mudanças no kw}
 \label{sec:impl-kw}
 
 A telemetria entra no kw pela função \texttt{kw}, no script de mesmo nome na
 raiz do repositório, que recebe todo comando que o usuário digita
-(Programa~\ref{prog:entrada}). As três linhas acrescentadas ficam antes da
-escolha do comando, para que o disparador rode antes de qualquer um. O ramo
-acrescenta ao kw cerca de 3,6 mil linhas em 30 arquivos, das quais 2,7 mil
-são testes; do resto, a maior parte é o disparador,
-\texttt{src/lib/telemetry.sh}, e o comando \texttt{kw telemetry},
+(Programa~\ref{prog:entrada}). O ramo acrescenta ao kw cerca de 3,6 mil linhas
+em 30 arquivos, das quais 2,7 mil são testes; do resto, a maior parte é o
+disparador, \texttt{src/lib/telemetry.sh}, e o comando \texttt{kw telemetry},
 \texttt{src/telemetry.sh}.
 
-\begin{programruledcaption}{O começo da função \texttt{kw}, no script \texttt{kw}, com o ponto
-    de entrada do disparador \citep{kwfork_telemetry}.
+\begin{programruledcaption}{O começo da função \texttt{kw}, no script \texttt{kw}
+    \citep{kwfork_telemetry}.
     \label{prog:entrada}}
 \begin{lstlisting}[language=bash, style=wider]
 function kw()
 {
-  action="$1"   # » o comando pedido: build, deploy, telemetry...
-  shift         # » o resto da linha vai para o comando
+  action="$1" %*\label{lin:entrada-action}*)
+  shift
 
   signal_manager || warning 'Was not able to set signal handler'
 
@@ -44,80 +43,110 @@ function kw()
 
   # Plain `.` instead of `include`, which forks `realpath`: this runs on every
   # command. A partial installation just skips the gate.
-  # » KW_LIB_DIR: onde o kw instalou as suas bibliotecas
-  if [[ -r "${KW_LIB_DIR}/lib/telemetry.sh" ]]; then
-    # » --source-only carrega as funções sem executar nada
+  if [[ -r "${KW_LIB_DIR}/lib/telemetry.sh" ]]; then %*\label{lin:entrada-if}*)
     . "${KW_LIB_DIR}/lib/telemetry.sh" --source-only &&
-      telemetry_gate "$action"   # » decide e volta logo
-  fi
+      telemetry_gate "$action"
+  fi %*\label{lin:entrada-fi}*)
 
-  case "$action" in   # » só então o kw escolhe o comando
+  case "$action" in %*\label{lin:entrada-case}*)
     # [...]
 \end{lstlisting}
 \end{programruledcaption}
 
-O disparador é a função \texttt{telemetry\_gate}
-(Programa~\ref{prog:gate}). Ela segue a ordem da Figura~\ref{fig:disparador}
-e sempre devolve zero: um problema na telemetria nunca muda o resultado do
-comando. Os passos 1 a 4 decidem se há algo a fazer; os 5 a 7, se já é hora de
-enviar. Entre eles, o trecho omitido lê o arquivo de estado, que guarda o
-instante da última tentativa, do último envio bem-sucedido e do último
-disparo, e o número de falhas seguidas.
+A linha~\ref{lin:entrada-action} guarda o comando pedido, e o \texttt{shift}
+passa o resto da linha ao comando. As linhas~\ref{lin:entrada-if}
+a~\ref{lin:entrada-fi} são as acrescentadas. Se a biblioteca do disparador está
+no diretório de bibliotecas do kw, \texttt{KW\_LIB\_DIR}, o kw a carrega e
+chama o disparador com o comando pedido. Isso acontece antes da escolha do
+comando, na linha~\ref{lin:entrada-case}, para que o disparador rode antes de
+qualquer um. O carregamento usa o \texttt{.} do shell, e não a função
+\texttt{include} do kw, que cria um processo a mais, porque roda a cada
+comando. A opção \texttt{-{}-source-only} é uma convenção do kw. O arquivo só
+define funções.
 
-\begin{programruledcaption}{A função \texttt{telemetry\_gate}, em
-    \texttt{src/\allowbreak{}lib/\allowbreak{}telemetry.sh} \citep{kwfork_telemetry}.
-    leituras de estado e uma consulta longa
-    abreviadas.
+O disparador é a função \texttt{telemetry\_gate}. Ela segue a ordem da
+Figura~\ref{fig:disparador} e sempre devolve zero, para que um problema na telemetria
+nunca mude o resultado do comando. Os passos 1 a 4 decidem se há algo a fazer
+(Programa~\ref{prog:gate}).
+
+\begin{programruledcaption}{O começo da função \texttt{telemetry\_gate}, em
+    \texttt{src/\allowbreak{}lib/\allowbreak{}telemetry.sh} \citep{kwfork_telemetry},
+    com os passos 1 a 4.
     \label{prog:gate}}
 \begin{lstlisting}[language=bash, style=wider]
 function telemetry_gate()
 {
   local action="${1:-}"
-  # [...] declarações
+  # [...]
 
-  # » 1. o próprio kw telemetry fica de fora
-  [[ "$action" == telemetry ]] && return 0
-  # » 2. sem o kw_tele instalado, nada a fazer
-  command -v kw_tele > /dev/null 2>&1 || return 0
+  [[ "$action" == telemetry ]] && return 0 %*\label{lin:gate-1}*)
+
+  command -v kw_tele > /dev/null 2>&1 || return 0 %*\label{lin:gate-2}*)
 
   telemetry_paths
   telemetry_load_config config
-  # » 3. consentimento: "no" volta; "ask" pergunta e volta
-  case "${config[consent]}" in
+  case "${config[consent]}" in %*\label{lin:gate-3}*)
     no) return 0 ;;
     ask)
       telemetry_prompt_consent >&2
       return 0
       ;;
-  esac
+  esac %*\label{lin:gate-3b}*)
 
-  # » 4. ajuda e versão não registram uso: nada a enviar
   # these actions never record events, so they neither upload nor spawn
   case "$action" in
-    '' | help | h | --help | -h | man | version | --version | -v) return 0 ;;
+    '' | help | h | --help | -h | man | version | --version | -v) %*\label{lin:gate-4}*)
+      return 0 ;;
   esac
+  # [...]
+\end{lstlisting}
+\end{programruledcaption}
 
-  # [...] lê o estado: last_attempt, last_success, spawned_at, failures
+O passo 1, na linha~\ref{lin:gate-1}, deixa o próprio \texttt{kw telemetry} de
+fora. O passo 2, na linha~\ref{lin:gate-2}, volta se o kw\_tele não está
+instalado. No passo 3, nas linhas~\ref{lin:gate-3} a~\ref{lin:gate-3b}, o
+consentimento \texttt{no} volta sem fazer nada, e o \texttt{ask} faz a pergunta
+na saída de erro e volta; a pergunta só aparece quando há um terminal. O passo
+4, na linha~\ref{lin:gate-4}, deixa de fora o kw sem comando e as ações que não
+registram uso: ajuda, manual e versão.
 
-  # » 5. o tempo mínimo entre tentativas dobra a cada falha seguida,
-  # »    até o intervalo de envio
-  gap="$backoff"
+Os passos 5 a 7 decidem se já é hora de enviar
+(Programa~\ref{prog:gate-tempo}). Antes deles, um trecho omitido lê o arquivo
+de estado, que guarda o instante da última tentativa, o do último envio
+bem-sucedido e o número de falhas seguidas, lê o instante do último disparo,
+que fica num arquivo à parte, e toma o instante atual, \texttt{now}. Um instante gravado no futuro, depois de um
+ajuste do relógio, é zerado, para não travar o disparador.
+
+\begin{programruledcaption}{O fim da função \texttt{telemetry\_gate}, em
+    \texttt{src/\allowbreak{}lib/\allowbreak{}telemetry.sh} \citep{kwfork_telemetry},
+    com os passos 5 a 7.
+    \label{prog:gate-tempo}}
+\begin{lstlisting}[language=bash, style=wider]
+  # [...]
+  backoff="${config[upload_backoff]}" %*\label{lin:tempo-cfg}*)
+  interval="${config[upload_interval]}"
+  batch_size="${config[batch_size]}"
+  # [...]
+
+  gap="$backoff" %*\label{lin:tempo-gap}*)
   if ((failures > 0)); then
     failures=$((failures > 21 ? 20 : failures - 1))
     gap_cap=$((interval > backoff ? interval : backoff))
     gap=$((backoff << failures))
     ((gap > gap_cap)) && gap="$gap_cap"
-  fi
-  ((now >= last_attempt + gap && now >= spawned_at + backoff)) || return 0
+  fi %*\label{lin:tempo-gapfim}*)
 
-  # » 6. venceu o intervalo desde o último envio bem-sucedido: dispara
-  if ((now >= last_success + interval)); then
+  ((now >= last_attempt + gap &&
+    now >= spawned_at + backoff)) || return 0 %*\label{lin:tempo-5}*)
+
+  if ((now >= last_success + interval)); then %*\label{lin:tempo-6}*)
     telemetry_spawn_upload "$now"
     return 0
   fi
 
-  # » 7. senão, dispara só se os pendentes já enchem um lote
-  [[ -f "$TELEMETRY_DB" ]] || return 0
+  # -readonly keeps sqlite3 from creating a missing database and -init
+  # /dev/null from reading ~/.sqliterc
+  [[ -f "$TELEMETRY_DB" ]] || return 0 %*\label{lin:tempo-7}*)
   {
     count="$(sqlite3 -readonly -batch -noheader -init /dev/null \
       -cmd '.timeout 100' "$TELEMETRY_DB" \
@@ -127,182 +156,204 @@ function telemetry_gate()
   telemetry_int count "$count" 0 "$TELEMETRY_INT_MAX" -1
   if ((count >= batch_size)); then
     telemetry_spawn_upload "$now"
-  fi
+  fi %*\label{lin:tempo-7fim}*)
 
   return 0
 }
 \end{lstlisting}
 \end{programruledcaption}
 
+A linha~\ref{lin:tempo-cfg} e as duas seguintes leem da configuração o tempo
+mínimo entre tentativas, o intervalo de envio e o tamanho do lote. As linhas~\ref{lin:tempo-gap}
+a~\ref{lin:tempo-gapfim} calculam o tempo mínimo que vale agora. A partir da
+segunda falha seguida, ele dobra a cada falha, até o intervalo de envio. O
+passo 5, na linha~\ref{lin:tempo-5}, só deixa seguir se esse tempo passou desde
+a última tentativa e se o tempo mínimo passou desde o último disparo. O passo
+6, na linha~\ref{lin:tempo-6}, dispara se o intervalo passou desde o último
+envio bem-sucedido. Senão, o passo 7, nas linhas~\ref{lin:tempo-7}
+a~\ref{lin:tempo-7fim}, conta os pendentes, até o tamanho de um lote, e
+dispara se eles já enchem um. A contagem abre o banco só para leitura e espera
+por ele no máximo 100 milissegundos; qualquer erro faz o disparador voltar sem
+disparar.
+
 Disparar é tarefa de \texttt{telemetry\_spawn\_upload}
-(Programa~\ref{prog:spawn}). Ela grava primeiro o instante do disparo, para que
-um kw\_tele que nem chegue a rodar não seja disparado de novo antes do tempo
-mínimo, verifica o esquema do banco e então inicia o kw\_tele separado do
-terminal, com prazo e sem entrada nem saída, e volta sem esperar por ele.
+(Programa~\ref{prog:spawn}).
 
 \begin{programruledcaption}{A função \texttt{telemetry\_spawn\_upload}, em
     \texttt{src/\allowbreak{}lib/\allowbreak{}telemetry.sh} \citep{kwfork_telemetry}.
-    um comentário de \textit{lint} omitido.
     \label{prog:spawn}}
 \begin{lstlisting}[language=bash, style=wider]
 function telemetry_spawn_upload()
 {
   local now="$1"
 
-  # » sem setsid ou timeout, não dispara (o comando segue)
-  command -v setsid > /dev/null 2>&1 || return 0
+  command -v setsid > /dev/null 2>&1 || return 0 %*\label{lin:spawn-setsid}*)
   command -v timeout > /dev/null 2>&1 || return 0
 
-  # » marca o disparo antes de disparar
-  printf '%s\n' "$now" 2> /dev/null > "$TELEMETRY_SPAWN" || return 0
+  printf '%s\n' "$now" 2> /dev/null \
+    > "$TELEMETRY_SPAWN" || return 0 %*\label{lin:spawn-marca}*)
 
-  telemetry_ensure_schema   # » acrescenta a coluna e o índice, se faltarem
+  telemetry_ensure_schema %*\label{lin:spawn-esquema}*)
 
   telemetry_read_version
 
   (
-    # » o kw_tele recebe os caminhos do kw por variáveis de ambiente
-    KW_DATA_DIR="${TELEMETRY_DB%/*}"
+    KW_DATA_DIR="${TELEMETRY_DB%/*}" %*\label{lin:spawn-env}*)
     KW_STATE_DIR="${TELEMETRY_STATE%/*}"
     KW_VERSION="$TELEMETRY_VERSION"
-    export KW_DATA_DIR KW_STATE_DIR KW_TELE_CONFIG="$TELEMETRY_CONFIG" KW_VERSION
-    # » setsid: fora do terminal; timeout 90: fim garantido;
-    # » & : em segundo plano, o comando do kw não espera
-    exec setsid timeout 90 kw_tele upload < /dev/null > /dev/null 2>&1 &
+    # [...]
+    export KW_DATA_DIR KW_STATE_DIR KW_TELE_CONFIG="$TELEMETRY_CONFIG" \
+      KW_VERSION %*\label{lin:spawn-export}*)
+    exec setsid timeout 90 kw_tele upload \
+      < /dev/null > /dev/null 2>&1 & %*\label{lin:spawn-exec}*)
   )
 }
 \end{lstlisting}
 \end{programruledcaption}
 
-No banco, o arquivo do esquema, \texttt{database/kwdb.sql}, ganhou três
-acréscimos (Programa~\ref{prog:esquema}): a coluna de marca de envio na tabela
-de eventos, a tabela da lista de módulos, ligada ao evento pela chave
-estrangeira, e um gatilho que grava o evento, a execução e os módulos de uma
-vez. O gatilho é o que torna a escrita atômica: o kw não escreve nessas
-tabelas, insere uma linha numa \textit{view}, e o gatilho distribui o dado.
-Como as três inserções correm dentro do mesmo gatilho,
-\texttt{last\_insert\_rowid()} devolve o identificador do evento que acabou de
-ser criado, coisa que uma segunda chamada ao \texttt{sqlite3} não saberia.
-Para os bancos que já existiam, a verificação do esquema acrescenta a coluna e
-um índice dos pendentes, e reaplica o arquivo se a \textit{view} faltar. O
-\texttt{database/pre\_cmd.sql}, lido antes de cada consulta do kw, ganhou um
-\texttt{.timeout 5000}: os comandos do kw esperam até 5 segundos pelo banco
-ocupado, em vez de falhar enquanto o kw\_tele marca linhas.
+Sem \texttt{setsid} ou \texttt{timeout} na máquina, a função volta sem
+disparar, e o comando segue (linha~\ref{lin:spawn-setsid} e a seguinte). A
+linha~\ref{lin:spawn-marca} grava primeiro o instante do disparo, para que um
+kw\_tele que nem chegue a rodar não seja disparado de novo antes do tempo
+mínimo. A linha~\ref{lin:spawn-esquema} verifica o esquema do banco. Ela acrescenta
+a coluna de marca de envio e o índice dos pendentes, se faltarem, e reaplica o
+arquivo de esquema se a \textit{view} da extensão faltar. As
+linhas~\ref{lin:spawn-env} a~\ref{lin:spawn-export} passam ao kw\_tele, por
+variáveis de ambiente, os diretórios do banco e do estado, o caminho da
+configuração e a versão do kw. A linha~\ref{lin:spawn-exec} inicia o kw\_tele numa sessão
+própria, fora do terminal (\texttt{setsid}), com prazo de 90 segundos
+(\texttt{timeout 90}), sem entrada nem saída e em segundo plano
+(\texttt{\&}), e o comando do kw não espera por ele.
 
-\begin{programruledcaption}{Os acréscimos ao esquema, em \texttt{database/\allowbreak{}kwdb.sql}
-    \citep{kwfork_telemetry}.
-    a \textit{view} e duas subconsultas abreviadas. O comentário original diz
-    \enquote{de uma compilação bem-sucedida}, mas o código grava também as
-    que falham.
+No banco, o arquivo do esquema, \texttt{database/kwdb.sql}, ganhou três
+acréscimos. Os dois primeiros estão no Programa~\ref{prog:esquema}: a coluna de
+marca de envio na tabela de eventos e a tabela da lista de módulos.
+
+\begin{programruledcaption}{A coluna e a tabela acrescentadas ao esquema, em
+    \texttt{database/\allowbreak{}kwdb.sql} \citep{kwfork_telemetry}.
     \label{prog:esquema}}
 \begin{lstlisting}[language=SQL, style=wider]
 CREATE TABLE IF NOT EXISTS "event" (
-  -- [...] id, date, time, como antes
+  -- [...]
   -- NULL when the event is pending upload by `kw telemetry`, -1 when it is
   -- excluded from it, otherwise the epoch of the upload that accepted it
-  "sent_at" INTEGER,
+  "sent_at" INTEGER, %*\label{lin:esq-sent}*)
   -- [...]
 
+-- [...]
 -- Extension table: the modules (CONFIG_*=m) of a successful build. Any table
 -- keyed by an "event" id plugs into the telemetry export this way.
 CREATE TABLE IF NOT EXISTS "build_modules" (
   "id" INTEGER NOT NULL UNIQUE PRIMARY KEY,
   "module_count" INTEGER,
   "module_names" TEXT,
-  FOREIGN KEY("id") REFERENCES "event"("id")   -- » é isso que a torna extensão
+  FOREIGN KEY("id") REFERENCES "event"("id") %*\label{lin:esq-fk}*)
     ON DELETE CASCADE
 );
+\end{lstlisting}
+\end{programruledcaption}
 
--- » [...] a view build_modules_report junta as colunas das três tabelas
+O comentário antes da linha~\ref{lin:esq-sent} dá os três valores da marca:
+\texttt{NULL} para o evento pendente, $-1$ para o excluído e, depois do envio,
+o instante do envio que o aceitou. A tabela \texttt{build\_modules} tem como
+chave o identificador do evento, e a linha~\ref{lin:esq-fk} a declara chave
+estrangeira para \texttt{event}, o que faz dela uma extensão
+(Seção~\ref{sec:banco-local}), como diz o comentário de cima. O comentário fala
+de uma compilação bem-sucedida, mas o kw grava também as que falham.
+
+O terceiro acréscimo é um gatilho que grava o evento, a execução e os módulos
+de uma vez (Programa~\ref{prog:gatilho}). O kw não escreve nessas tabelas.
+Ele insere uma linha numa \textit{view}, \texttt{build\_modules\_report}, que tem as
+colunas de uma execução e as dos módulos, e o gatilho distribui o dado.
+
+\begin{programruledcaption}{A \textit{view} e o gatilho, em
+    \texttt{database/\allowbreak{}kwdb.sql} \citep{kwfork_telemetry}.
+    \label{prog:gatilho}}
+\begin{lstlisting}[language=SQL, style=wider]
+-- Same columns as "statistics_report" plus the build_modules ones
+CREATE VIEW IF NOT EXISTS "build_modules_report"
+-- [...]
 
 CREATE TRIGGER IF NOT EXISTS "insert_build_modules"
   INSTEAD OF INSERT ON "build_modules_report"
   BEGIN
-    -- » [...] cria o nome do comando e do estado, se novos
-    INSERT INTO "event" ("date", "time") VALUES ("NEW"."date", "NEW"."time");
-    -- » last_insert_rowid(): o id do evento que acabou de nascer
+    INSERT OR IGNORE INTO "command_label" ("name") %*\label{lin:gat-nomes}*)
+      VALUES ("NEW"."label_name");
+    INSERT OR IGNORE INTO "status" ("name") VALUES ("NEW"."status");
+
+    INSERT INTO "event" ("date", "time") %*\label{lin:gat-evento}*)
+      VALUES ("NEW"."date", "NEW"."time");
+
     INSERT INTO "executed" ("id", "command_label_id", "status_id",
                             "elapsed_time_in_secs")
-      VALUES (last_insert_rowid(), -- » [...] números do comando e do estado
-              "NEW"."elapsed_time_in_secs");
+      VALUES (
+        last_insert_rowid(), %*\label{lin:gat-rowid1}*)
+        -- [...]
+        "NEW"."elapsed_time_in_secs"
+      );
+
     INSERT INTO "build_modules" ("id", "module_count", "module_names")
-      VALUES (last_insert_rowid(), "NEW"."module_count", "NEW"."module_names");
+      VALUES (last_insert_rowid(), %*\label{lin:gat-rowid2}*)
+              "NEW"."module_count", "NEW"."module_names");
   END;
 \end{lstlisting}
 \end{programruledcaption}
 
+A linha~\ref{lin:gat-nomes} e a seguinte criam o nome do comando e o do
+estado, se ainda não existem. A linha~\ref{lin:gat-evento} cria o evento, e as
+duas inserções seguintes gravam a execução e os módulos com o identificador
+dele, que \texttt{last\_insert\_rowid()} devolve
+(linhas~\ref{lin:gat-rowid1} e~\ref{lin:gat-rowid2}). Como as inserções correm
+dentro do mesmo gatilho, esse é o identificador do evento que acabou de ser
+criado, coisa que uma segunda chamada ao \texttt{sqlite3} não saberia. As
+subconsultas omitidas trocam o nome do comando e o do estado pelos seus
+identificadores. Nos bancos que já existiam, a verificação do esquema do
+Programa~\ref{prog:spawn} cuida dos três acréscimos. O
+\texttt{database/pre\_cmd.sql}, lido antes de cada consulta do kw, ganhou um
+\texttt{.timeout 5000}, e os comandos do kw esperam até 5 segundos pelo banco
+ocupado, em vez de falhar enquanto o kw\_tele marca linhas.
+
 A configuração da telemetria fica num arquivo próprio,
 \texttt{etc/telemetry.config}, de chaves e valores
-(Programa~\ref{prog:config}). Três chaves são gravadas pelo
-\texttt{kw telemetry}: o consentimento, o identificador da instalação e o
-endereço que foi aceito. Se o usuário muda o endereço à mão, ele deixa de ser
-o aceito, e o kw pergunta o consentimento de novo. As outras três dão o
-intervalo, o tempo mínimo e o lote do Programa~\ref{prog:gate}.
+(Programa~\ref{prog:config}).
 
 \begin{programruledcaption}{A configuração padrão, em \texttt{etc/\allowbreak{}telemetry.config}
     \citep{kwfork_telemetry}.
-    o cabeçalho de comentários omitido. A lista de exclusão vem comentada,
-    isto é, vazia.
     \label{prog:config}}
 \begin{lstlisting}[style=wider]
-# exclude_fields=   (comma-separated attribute keys not to send, e.g. ...)
+# [...]
+# exclude_fields=   (comma-separated attribute keys not to send, e.g. kw.build_modules.module_names) %*\label{lin:cfg-excl}*)
 
-telemetry_consent=ask    # » ask, yes ou no; ask é o padrão
-instance_id=             # » criado no opt-in, aleatório
-consented_endpoint=      # » o endereço aceito no opt-in
-endpoint=http://localhost:4318/v1/logs   # » para onde enviar
-upload_interval=86400    # » envio, no máximo, uma vez por dia...
-upload_backoff=3600      # » ...com pelo menos 1 h entre tentativas
-batch_size=500           # » ...ou antes, se houver 500 pendentes
+telemetry_consent=ask %*\label{lin:cfg-consent}*)
+instance_id=
+consented_endpoint= %*\label{lin:cfg-aceito}*)
+endpoint=http://localhost:4318/v1/logs %*\label{lin:cfg-endpoint}*)
+upload_interval=86400 %*\label{lin:cfg-interval}*)
+upload_backoff=3600
+batch_size=500
 \end{lstlisting}
 \end{programruledcaption}
+
+A lista de exclusão, na linha~\ref{lin:cfg-excl}, vem comentada, isto é,
+vazia. As linhas~\ref{lin:cfg-consent} a~\ref{lin:cfg-aceito} são gravadas pelo
+\texttt{kw telemetry}: o consentimento, que começa em \texttt{ask}; o
+identificador da instalação, aleatório, criado no opt-in; e o endereço aceito.
+Se o usuário muda à mão o endereço da linha~\ref{lin:cfg-endpoint}, ele deixa
+de ser o aceito, e o kw pergunta o consentimento de novo. As três últimas
+linhas dão o intervalo de envio, um dia, o tempo mínimo entre tentativas, uma
+hora, e o tamanho do lote, 500 eventos, usados no
+Programa~\ref{prog:gate-tempo}.
 
 Por fim, o \texttt{setup.sh} do kw instala o kw\_tele com a função
-\texttt{install\_kw\_tele} (Programa~\ref{prog:setup}). Com a variável
-\texttt{KW\_TELE\_PATH} apontando para uma cópia do repositório deste
-trabalho, ele constrói o kw\_tele a partir dela; sem a variável, baixa a
-versão publicada no repositório deste trabalho. Enquanto não há versão
-publicada, o caminho que funciona é o primeiro. Se a instalação falha, o
-\texttt{setup.sh} avisa e continua, e o kw funciona sem telemetria, porque o
-passo 2 do disparador vê que o kw\_tele não está instalado. Numa
-reinstalação, o kw\_tele antigo é mantido até o novo ser instalado. A única
-dependência nova declarada para as distribuições é o Python.
-
-\begin{programruledcaption}{A função \texttt{install\_kw\_tele}, em \texttt{setup.sh}
-    \citep{kwfork_telemetry}.
-    \label{prog:setup}}
-\begin{lstlisting}[language=bash, style=wider]
-function install_kw_tele()
-{
-  local tmp_dir
-  local ret
-
-  say ''
-  say 'Installing `kw_tele`...'
-
-  # » com uma cópia local do repositório, constrói a partir dela
-  if [[ -n "$KW_TELE_PATH" ]]; then
-    "${KW_TELE_PATH}/build.sh" "${binpath}/kw_tele"
-    return "$?"
-  fi
-
-  # » senão, baixa a versão publicada para um diretório temporário
-  tmp_dir="$(mktemp --directory)" || return "$?"
-
-  # » --fail: um erro HTTP vira erro, e nada é instalado
-  curl --fail --silent --location --output "${tmp_dir}/kw_tele" \
-    "$KW_TELE_LATEST_RELEASE"
-  ret="$?"
-  if [[ "$ret" == 0 ]]; then
-    install --mode=755 "${tmp_dir}/kw_tele" "${binpath}/kw_tele"
-    ret="$?"
-  fi
-
-  rm --recursive --force "$tmp_dir"
-  return "$ret"   # » quem chama avisa e segue se não deu certo
-}
-\end{lstlisting}
-\end{programruledcaption}
+\texttt{install\_kw\_tele}. Com a variável \texttt{KW\_TELE\_PATH} apontando
+para uma cópia do repositório deste trabalho, ele constrói o kw\_tele a partir
+dela; sem a variável, baixa a versão publicada no repositório deste trabalho.
+Enquanto não há versão publicada, o caminho que funciona é o primeiro. Se a
+instalação falha, o \texttt{setup.sh} avisa e continua, e o kw funciona sem
+telemetria, porque o passo 2 do disparador vê que o kw\_tele não está
+instalado. Numa reinstalação, o kw\_tele antigo é mantido até o novo ser
+instalado. A única dependência nova declarada para as distribuições é o
+Python.
 
 \section{O kw\_tele}
 \label{sec:impl-kwtele}
@@ -310,49 +361,18 @@ function install_kw_tele()
 O kw\_tele está em \texttt{client/kw\_tele} no repositório deste trabalho
 \citep{tccrepo}. É um programa em Python, a partir da versão 3.10, feito só
 com a biblioteca padrão: \texttt{sqlite3} para o banco, \texttt{json} para o
-documento e \texttt{urllib} para o envio. O usuário não o chama diretamente:
+documento e \texttt{urllib} para o envio. O usuário não o chama diretamente, porque
 cada comando do \texttt{kw telemetry} chama um subcomando do kw\_tele
-(Tabela~\ref{tab:comandos-telemetria}).
+(Tabela~\ref{tab:comandos-telemetria}). O código é empacotado num único
+arquivo executável, com o \texttt{zipapp} do Python \citep{python310_zipapp},
+e é esse arquivo que o \texttt{setup.sh} instala; como construir e instalar
+está no README do repositório.
 
 \input{figuras/tab-comandos-telemetria}
 
-O \texttt{build.sh} junta o código num único arquivo com o \texttt{zipapp} do
-Python, que cria um arquivo zip que o interpretador executa diretamente, com
-um ponto de entrada e uma linha que indica o interpretador
-\citep{python310_zipapp} (Programa~\ref{prog:build}). É esse arquivo que o
-\texttt{setup.sh} instala.
-
-\begin{programruledcaption}{O empacotamento, em \texttt{client/\allowbreak{}kw\_tele/\allowbreak{}build.sh}
-    \citep{tccrepo}, sem o cabeçalho e a checagem de argumentos.
-    \label{prog:build}}
-\begin{lstlisting}[language=bash, style=wider]
-# [...]
-# » root: o diretório do build.sh; $1: o arquivo a gerar
-root=$(cd "$(dirname "$0")" && pwd)
-stage=$(mktemp -d)
-trap 'rm -rf "$stage"' EXIT
-# Stage the sources so stray bytecode caches never end up in the archive.
-cp -R "$root/src/kw_tele" "$stage/kw_tele"
-find "$stage" -name __pycache__ -prune -exec rm -rf {} +
-# zipapp's -m entry point calls main() without sys.exit, which would swallow
-# the exit code.
-# » por isso o __main__.py é escrito à mão, com sys.exit(main())
-printf 'import sys\n\nfrom kw_tele.cli import main\n\nsys.exit(main())\n' \
-  > "$stage/__main__.py"
-# » -p: a linha #! que faz o arquivo rodar como um programa
-python3 -m zipapp "$stage" -o "$1" -p "/usr/bin/env python3"
-chmod 755 "$1"
-\end{lstlisting}
-\end{programruledcaption}
-
-O caminho do dado dentro do kw\_tele passa por três módulos. O primeiro,
+O caminho do dado dentro do kw\_tele passa por quatro módulos. O primeiro,
 \texttt{reflect.py}, lê o esquema do banco a cada execução e decide que
-tabelas são extensões do evento (Programa~\ref{prog:reflexao}). A decisão é a
-da Seção~\ref{sec:banco-local}: a coluna \texttt{id} tem de ser chave
-estrangeira para \texttt{event}. Cada coluna da extensão vira um atributo, e
-uma coluna que aponta para uma tabela com coluna \texttt{name} é trocada pelo
-nome, com o sufixo \texttt{\_id} retirado. É por isso que
-\texttt{command\_label\_id} sai como \texttt{kw.executed.command\_label}.
+tabelas são extensões do evento (Programa~\ref{prog:reflexao}).
 
 \begin{programruledcaption}{Como o kw\_tele reconhece uma tabela de extensão e nomeia os seus
     atributos, em \texttt{client/\allowbreak{}kw\_tele/\allowbreak{}src/\allowbreak{}kw\_tele/\allowbreak{}reflect.py}
@@ -361,102 +381,116 @@ nome, com o sufixo \texttt{\_id} retirado. É por isso que
 \begin{lstlisting}[language=python, style=wider]
 def _column(conn, table, name, foreign_keys):
     target = foreign_keys.get(name)
-    # » a coluna aponta para o id de uma tabela com "name"? então manda o nome
     if target and target[1] in ("id", None) and \
-            "name" in _column_names(conn, target[0]):
-        lookup = "(SELECT {name} FROM {ref} WHERE {id} = {table}.{column})" \
-            .format(name=quote("name"), ref=quote(target[0]), id=quote("id"),
-                    table=quote(table), column=quote(name))
-        # » command_label_id -> kw.executed.command_label
-        return Column("kw.{}.{}".format(table, name.removesuffix("_id")),
-                      lookup)
-    # » senão, o valor como está: kw.<tabela>.<coluna>
-    return Column(f"kw.{table}.{name}", f"{quote(table)}.{quote(name)}")
+            "name" in _column_names(conn, target[0]): %*\label{lin:ref-nome}*)
+        lookup = "(SELECT {name} FROM {ref} WHERE {id} = " \
+            "{table}.{column})".format(
+                name=quote("name"), ref=quote(target[0]), id=quote("id"),
+                table=quote(table), column=quote(name))
+        return Column(
+            "kw.{}.{}".format(table, name.removesuffix("_id")), %*\label{lin:ref-sufixo}*)
+            lookup)
+    return Column(f"kw.{table}.{name}",
+                  f"{quote(table)}.{quote(name)}") %*\label{lin:ref-valor}*)
 
 
 def _extension(conn, table):
     foreign_keys = _foreign_keys(conn, table)
     parent = foreign_keys.get("id")
-    # » só é extensão se o id é chave estrangeira para event
-    if parent is None or parent[0].lower() != "event":
+    if parent is None or parent[0].lower() != "event": %*\label{lin:ref-ext}*)
         return None
     columns = tuple(
         _column(conn, table, name, foreign_keys)
         for name in _column_names(conn, table)
-        if name != "id" and include(table, name)   # » o id já vai no evento
+        if name != "id" and include(table, name) %*\label{lin:ref-include}*)
     )
     return Extension(table, columns)
 \end{lstlisting}
 \end{programruledcaption}
 
+A decisão é a da Seção~\ref{sec:banco-local}, na linha~\ref{lin:ref-ext}. Uma
+tabela só é extensão se a sua coluna \texttt{id} é chave estrangeira para
+\texttt{event}. Cada coluna da extensão vira um atributo, exceto o próprio
+\texttt{id}, que já vai no evento, e as que a função \texttt{include} deixa de
+fora (linha~\ref{lin:ref-include}); hoje, ela deixa de fora só a marca de
+envio. O nome do atributo é \texttt{kw.<tabela>.<coluna>}, com o valor como
+está (linha~\ref{lin:ref-valor}). A exceção começa na
+linha~\ref{lin:ref-nome}, em que uma coluna que aponta para o \texttt{id} de uma
+tabela com coluna \texttt{name} é trocada pelo nome, por uma subconsulta, e o
+atributo perde o sufixo \texttt{\_id} (linha~\ref{lin:ref-sufixo}). É por isso
+que \texttt{command\_label\_id} sai como \texttt{kw.executed.command\_label}.
+
 O segundo, \texttt{payload.py}, monta os registros a partir das linhas lidas
-(Programa~\ref{prog:payload}). É ali que um evento com duas extensões vira dois
-registros com o mesmo identificador, como na Figura~\ref{fig:evento-registro},
-e que um evento sem extensão vira um registro do tipo \texttt{event}. Os
-valores do evento passam por \texttt{coarsen.export\_value}, que tira a hora e
-troca a data pela segunda-feira da semana, e os campos da lista de exclusão do
-usuário saem do registro, exceto as duas chaves protegidas, o identificador e
-o tipo.
+(Programa~\ref{prog:payload}). Antes do trecho, a função lê do banco as linhas
+pendentes do lote, em \texttt{events}, com os nomes das colunas de
+\texttt{event} em \texttt{names}.
 
 \begin{programruledcaption}{Do evento aos registros, o laço central de
-    \texttt{client/\allowbreak{}kw\_tele/\allowbreak{}src/\allowbreak{}kw\_tele/\allowbreak{}payload.py} \citep{tccrepo},
-    sem a consulta ao banco, o caminho de exportação e o documento externo.
+    \texttt{client/\allowbreak{}kw\_tele/\allowbreak{}src/\allowbreak{}kw\_tele/\allowbreak{}payload.py} \citep{tccrepo}.
     \label{prog:payload}}
 \begin{lstlisting}[language=python, style=wider]
 # [...]
-# » events: as linhas pendentes do lote; names: as colunas de event
-# » as linhas de cada extensão, do primeiro ao último id do lote
-extension_rows = _extension_rows(conn, schema.extensions, first_id, last_id)
-# » o instante do envio, também com granularidade de semana, em nanossegundos
-observed = str(coarsen.week_instant(resource.now) * 10**9)
-dropped = exclude - coarsen.PROTECTED_KEYS   # » kw.event.id e .kind ficam
+extension_rows = _extension_rows( %*\label{lin:pay-ext}*)
+    conn, schema.extensions, first_id, last_id)
+observed = str(coarsen.week_instant(resource.now) * 10**9) %*\label{lin:pay-obs}*)
+dropped = exclude - coarsen.PROTECTED_KEYS %*\label{lin:pay-drop}*)
 
 records, marks = [], []
-
 for *values, sent_at, raw_date, raw_time in events:
     event = dict(zip(names, values))
-    # » guarda id, data e hora crus, para a marca de envio conferir depois
-    marks.append((event["id"], raw_date, raw_time))
-    # » colunas do evento: a hora sai, a data vira a segunda-feira
-    exported = ((name, coarsen.export_value(name, event)) for name in event)
+    marks.append((event["id"], raw_date, raw_time)) %*\label{lin:pay-marks}*)
+    exported = ((name, coarsen.export_value(name, event)) %*\label{lin:pay-export}*)
+                for name in event)
     event_attributes = [
         (f"kw.event.{name}", value)
         for name, value in exported if value is not coarsen.OMIT
     ]
     moment = coarsen.event_moment(event)
-    # » uma linha de extensão = um registro; nenhuma = um registro "event"
-    matches = [
-        (extension.table, [(c.key, v) for c, v in zip(extension.columns, row)])
+    matches = [ %*\label{lin:pay-matches}*)
+        (extension.table,
+         [(c.key, v) for c, v in zip(extension.columns, row)])
         for extension in schema.extensions
         for row in extension_rows[extension.table].get(event["id"], [])
-    ] or [("event", [])]
+    ] or [("event", [])] %*\label{lin:pay-or}*)
     for kind, extra in matches:
         pairs = event_attributes + [("kw.event.kind", kind)] + extra
         # [...]
         records.append({
-            "timeUnixNano": _time_unix_nano(moment),   # » instante da semana
-            "observedTimeUnixNano": observed,          # » idem, do envio
+            "timeUnixNano": _time_unix_nano(moment), %*\label{lin:pay-tempo}*)
+            "observedTimeUnixNano": observed,
             "severityNumber": _SEVERITY_INFO,
             "severityText": "INFO",
-            "body": {"stringValue": kind},             # » o tipo do registro
+            "body": {"stringValue": kind}, %*\label{lin:pay-body}*)
             "attributes": _attributes(
-                (k, v) for k, v in pairs if k not in dropped),
+                (k, v) for k, v in pairs if k not in dropped), %*\label{lin:pay-attrs}*)
         })
 \end{lstlisting}
 \end{programruledcaption}
 
-O terceiro é o envio, em \texttt{commands.py}
-(Programa~\ref{prog:envio}). Uma execução tem prazo de 60 segundos, imposto por
-um sinal de alarme que interrompe até código da biblioteca padrão, dentro do
-limite que o disparador já impõe de fora (Programa~\ref{prog:spawn}). Uma
-trava de arquivo impede dois kw\_tele de enviar ao mesmo tempo: o segundo sai
-sem enviar. E, a cada lote, o consentimento é lido de novo, para que um
-\texttt{opt-out} no meio de um envio longo pare o envio no lote seguinte.
+A linha~\ref{lin:pay-ext} lê, de uma vez, as linhas de cada extensão entre o
+primeiro e o último evento do lote. A linha~\ref{lin:pay-obs} toma o instante
+do envio já com granularidade de semana, e a linha~\ref{lin:pay-drop} calcula
+os campos a tirar, que são os da lista de exclusão do usuário, exceto as duas chaves
+protegidas, o identificador e o tipo do evento. No laço, a
+linha~\ref{lin:pay-marks} guarda o identificador, a data e a hora crus de cada
+evento, para a marca de envio conferir depois. Na linha~\ref{lin:pay-export},
+cada coluna do evento passa por \texttt{coarsen.export\_value}, que tira a
+hora e troca a data pela segunda-feira da semana; uma data inválida também
+sai.
+
+As linhas~\ref{lin:pay-matches} a~\ref{lin:pay-or} são onde um evento com duas
+extensões vira dois registros com o mesmo identificador, como na
+Figura~\ref{fig:evento-registro}. Cada linha de extensão dá um registro, e um
+evento sem nenhuma dá um registro do tipo \texttt{event}. O tempo do registro
+é o instante da semana do evento (linha~\ref{lin:pay-tempo}), o corpo é o tipo
+(linha~\ref{lin:pay-body}), e os campos excluídos saem dos atributos na
+linha~\ref{lin:pay-attrs}. Fora do trecho ficam a consulta ao banco, o caminho
+do comando de exportação e o documento que embrulha os registros. O terceiro
+módulo é o envio, em \texttt{commands.py} (Programa~\ref{prog:envio}).
 
 \begin{programruledcaption}{O envio, em três trechos de
-    \texttt{client/\allowbreak{}kw\_tele/\allowbreak{}src/\allowbreak{}kw\_tele/\allowbreak{}commands.py} \citep{tccrepo}:
-    a trava, o prazo e o consentimento relido a cada lote. Nos dois últimos,
-    a indentação foi reduzida.
+    \texttt{client/\allowbreak{}kw\_tele/\allowbreak{}src/\allowbreak{}kw\_tele/\allowbreak{}commands.py} \citep{tccrepo}.
+    Nos três, a indentação foi reduzida.
     \label{prog:envio}}
 \begin{lstlisting}[language=python, style=wider]
 def run(self):
@@ -464,65 +498,75 @@ def run(self):
     config = settings.load_config(env.config_path)
     if config.effective_consent != "yes":
         return EXIT_REFUSED
-    # » a trava: se outro kw_tele já envia, este sai sem enviar
-    with locks.try_lock(env.upload_lock_path) as acquired:
+    with locks.try_lock(env.upload_lock_path) as acquired: %*\label{lin:env-trava}*)
         if not acquired:
             self._complain("upload already in progress")
             return EXIT_OK
         return self._locked(config)
 
 # [...]
-# » em _locked: o prazo de 60 s em volta de todo o envio;
-# » before: o estado lido; failures: as falhas seguidas, contando esta
 try:
-    with limit(UPLOAD_DEADLINE_SECONDS):
+    with limit(UPLOAD_DEADLINE_SECONDS): %*\label{lin:env-prazo}*)
         return self._send_all(before, failures)
 except DeadlineExceeded:
     return self._on_deadline(failures)
 
 # [...]
-# » em _send_all, a cada lote:
 while True:
-    config = settings.load_config(env.config_path)   # » relido a cada lote
+    config = settings.load_config(env.config_path) %*\label{lin:env-relido}*)
     if config.effective_consent != "yes":
         # A consent change is not a failure.
-        # » o estado volta ao que era antes deste envio
-        self._record(before.last_status, before.consecutive_failures)
+        self._record(before.last_status, before.consecutive_failures) %*\label{lin:env-estado}*)
         return EXIT_REFUSED
     # [...]
-    # » monta o lote, envia, e só marca depois do sucesso
 \end{lstlisting}
 \end{programruledcaption}
 
-A marca de envio, por fim, é gravada em \texttt{db.py} numa transação curta,
-só depois da resposta de sucesso, e confere o identificador, a data e a hora
-de cada evento (Programa~\ref{prog:marca}). Conferir o conteúdo, e não só o
-identificador, é a defesa contra o identificador reaproveitado da
-Seção~\ref{sec:banco-local}. Nenhuma transação fica aberta durante a
-requisição.
+O primeiro trecho é a entrada do comando \texttt{upload}. Sem consentimento, o
+kw\_tele sai sem enviar. A linha~\ref{lin:env-trava} pega uma trava de
+arquivo, que impede dois kw\_tele de enviar ao mesmo tempo, e o segundo sai sem
+enviar. O segundo trecho, dentro de \texttt{\_locked}, põe um prazo de 60
+segundos em volta de todo o envio (linha~\ref{lin:env-prazo}), imposto por um
+sinal de alarme que interrompe até código da biblioteca padrão, dentro do
+limite que o disparador já impõe de fora (Programa~\ref{prog:spawn}). O
+terceiro trecho é o começo do laço de \texttt{\_send\_all}, que roda uma vez
+por lote. O consentimento é lido de novo a cada lote
+(linha~\ref{lin:env-relido}), para que um \texttt{opt-out} no meio de um envio
+longo pare o envio no lote seguinte. Nesse caso, o status e a contagem de
+falhas voltam ao que eram antes do envio (linha~\ref{lin:env-estado}), porque
+mudar de ideia não é uma falha. O resto do laço monta o lote, envia e só marca os eventos depois da
+resposta de sucesso.
+
+O quarto, \texttt{db.py}, grava a marca de envio
+(Programa~\ref{prog:marca}).
 
 \begin{programruledcaption}{A marca de envio, em
     \texttt{client/\allowbreak{}kw\_tele/\allowbreak{}src/\allowbreak{}kw\_tele/\allowbreak{}db.py} \citep{tccrepo}.
     \label{prog:marca}}
 \begin{lstlisting}[language=python, style=wider]
 def mark_sent(conn, marks, now):
-    """Returns how many rows were marked.
-
-    Match on content as well as id, since event.id is a rowid and can be
-    reused after a delete. The comparison is on raw bytes: text decoded with
-    errors="replace" would never match.
-    """
-    with conn:   # » uma transação curta; quem chama já teve o sucesso
+    # [...]
+    with conn: %*\label{lin:marca-with}*)
         cursor = conn.executemany(
             "UPDATE event SET sent_at = :now WHERE id = :id"
-            " AND CAST(date AS BLOB) = :date"
+            " AND CAST(date AS BLOB) = :date" %*\label{lin:marca-date}*)
             " AND CAST(time AS BLOB) IS :time"
-            " AND (sent_at IS NULL OR sent_at = -1)",   # » pendente ou excluído
-            [{"now": now, "id": i, "date": d, "time": t} for i, d, t in marks],
+            " AND (sent_at IS NULL OR sent_at = -1)", %*\label{lin:marca-sent}*)
+            [{"now": now, "id": i, "date": d, "time": t}
+             for i, d, t in marks],
         )
         return cursor.rowcount
 \end{lstlisting}
 \end{programruledcaption}
+
+A gravação é uma transação curta (linha~\ref{lin:marca-with}), e quem a chama
+só chega aqui depois da resposta de sucesso; nenhuma transação fica aberta
+durante a requisição. A atualização confere, além do identificador, a data e
+a hora de cada evento, em bytes (linha~\ref{lin:marca-date} e a seguinte).
+Conferir o conteúdo, e não só o identificador, é a defesa contra o
+identificador reaproveitado da Seção~\ref{sec:banco-local}, e a comparação é
+feita em bytes, como explica o comentário omitido da função. Só são marcados eventos pendentes ou excluídos
+(linha~\ref{lin:marca-sent}).
 
 \section{O Collector e o backend próprio}
 \label{sec:impl-backend}
@@ -530,11 +574,9 @@ def mark_sent(conn, marks, now):
 O Collector e o backend próprio estão em \texttt{server/} no repositório deste
 trabalho \citep{tccrepo}. O Collector é a imagem oficial do OpenTelemetry, na
 versão 0.121.0 \citep{otel_collector_v0_121_0}, sem nenhum código deste
-trabalho: tudo o que ele faz está num arquivo de configuração de 30 linhas
-(Programa~\ref{prog:collector}). O prazo do exportador, 8 segundos, fica abaixo
-do tempo limite de cada conexão do kw\_tele, 10 segundos: com o backend lento,
-o Collector desiste e responde com erro antes de a conexão do cliente
-expirar.
+trabalho, e tudo o que ele faz está num arquivo de configuração, que tem 30 linhas
+sem os comentários
+(Programa~\ref{prog:collector}).
 
 \begin{programruledcaption}{A configuração do Collector, \texttt{server/\allowbreak{}collector/\allowbreak{}config.yaml},
     sem os comentários do arquivo \citep{tccrepo}.
@@ -544,135 +586,157 @@ receivers:
   otlp:
     protocols:
       http:
-        endpoint: 0.0.0.0:4318        # » onde o kw_tele envia
+        endpoint: 0.0.0.0:4318 %*\label{lin:col-porta}*)
 processors:
-  memory_limiter:                     # » recusa carga acima do limite
+  memory_limiter: %*\label{lin:col-mem}*)
     check_interval: 1s
     limit_mib: 256
     spike_limit_mib: 64
-  resource:                           # » só marca por onde o registro passou
+  resource: %*\label{lin:col-res}*)
     attributes:
       - key: pipeline.hop
         value: otel-collector
         action: upsert
 exporters:
   otlphttp/sinklogs:
-    logs_endpoint: http://sink:8000/v1/logs   # » o backend próprio
+    logs_endpoint: http://sink:8000/v1/logs %*\label{lin:col-sink}*)
     encoding: json
-    timeout: 8s                       # » menos que os 10 s do kw_tele
+    timeout: 8s %*\label{lin:col-timeout}*)
     sending_queue:
-      enabled: false                  # » sem fila: o sucesso só volta...
+      enabled: false %*\label{lin:col-fila}*)
     retry_on_failure:
-      enabled: false                  # » ...depois de o backend gravar
+      enabled: false %*\label{lin:col-retry}*)
 service:
   pipelines:
     logs:
       receivers: [otlp]
-      processors: [memory_limiter, resource]   # » nessa ordem
+      processors: [memory_limiter, resource] %*\label{lin:col-ordem}*)
       exporters: [otlphttp/sinklogs]
 \end{lstlisting}
 \end{programruledcaption}
+
+O receptor escuta na porta 4318, onde o kw\_tele envia
+(linha~\ref{lin:col-porta}). O primeiro processador, na
+linha~\ref{lin:col-mem}, recusa carga acima de um limite de memória; o
+segundo, na linha~\ref{lin:col-res}, só marca por onde o registro passou, e
+nenhum dos dois filtra campos. A linha~\ref{lin:col-ordem} fixa essa ordem, com
+o limite de memória primeiro. O exportador entrega ao backend próprio
+(linha~\ref{lin:col-sink}) com prazo de 8 segundos
+(linha~\ref{lin:col-timeout}), abaixo do tempo limite de cada conexão do
+kw\_tele, 10 segundos. Com o backend lento, o Collector desiste e responde com
+erro antes de a conexão do cliente expirar. Sem fila e sem retentativa
+(linhas~\ref{lin:col-fila} e~\ref{lin:col-retry}), a exportação é síncrona, e
+o Collector só responde com sucesso depois de o backend gravar.
 
 O backend próprio é \texttt{server/sink/app.py}, um programa em Python com o
 FastAPI \citep{fastapi_0_115_6} e o servidor uvicorn \citep{uvicorn_0_34_0},
 que roda num contêiner e guarda os dados num arquivo SQLite num volume. O mesmo
 programa atende a entrada, chamada só pelo Collector, as três rotas de
 consulta (Seção~\ref{sec:consulta}) e uma rota de saúde. A entrada
-(Programa~\ref{prog:entrada-backend}) segue a Figura~\ref{fig:backend-entrada}:
-separa os registros, põe os malformados à parte, grava o lote numa transação
-só, ignorando os repetidos, e só então responde com sucesso.
+(Programa~\ref{prog:entrada-backend}) segue a Figura~\ref{fig:backend-entrada}.
 
 \begin{programruledcaption}{A entrada do backend próprio, em \texttt{server/\allowbreak{}sink/\allowbreak{}app.py}
     \citep{tccrepo}.
-    a
-    descompressão, a lista de colunas e o tratamento de erros abreviados.
     \label{prog:entrada-backend}}
 \begin{lstlisting}[language=python, style=wider]
 def _store_logs(body, gz):
-    # [...] descompacta, se veio comprimido
-    # » separa: "ok" vai para log_record, "raw" para log_record_raw
-    items = list(_split_logs(body))
+    # [...]
+    items = list(_split_logs(body)) %*\label{lin:sto-split}*)
     ok = [it[1] for it in items if it[0] == "ok"]
     raw = [it[1:] for it in items if it[0] == "raw"]
-    received_at = _received_at()   # » também na granularidade de semana
+    received_at = _received_at() %*\label{lin:sto-recv}*)
 
     with _lock:
         try:
             cur = _conn.execute(
-                "INSERT INTO export_batch (received_at, body_bytes, point_count)"
-                " VALUES (?,?,?)", (received_at, len(body), len(ok)))
+                "INSERT INTO export_batch (received_at, body_bytes,"
+                " point_count) VALUES (?,?,?)",
+                (received_at, len(body), len(ok)),
+            )
             batch_id = cur.lastrowid
-            # » OR IGNORE: um repetido (mesma chave) não entra de novo
             _conn.executemany(
-                """INSERT OR IGNORE INTO log_record (batch_id, received_at,
-                     -- [...] demais colunas, até dedupe_key
-                   ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
-                [(batch_id, received_at, *r) for r in ok])
+                """INSERT OR IGNORE INTO log_record ( %*\label{lin:sto-ignore}*)
+                     batch_id, received_at, service_name, service_instance_id,
+                     pipeline_hop, scope_name, time_unix_nano,
+                     observed_time_unix_nano, body, event_id, attributes, dedupe_key)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                [(batch_id, received_at, *r) for r in ok],
+            )
             _conn.executemany(
-                "INSERT INTO log_record_raw (batch_id, received_at, reason, raw)"
-                " VALUES (?,?,?,?)",
-                [(batch_id, received_at, *r) for r in raw])
-            _conn.commit()   # » grava tudo de uma vez...
+                "INSERT INTO log_record_raw (batch_id, received_at,"
+                " reason, raw) VALUES (?,?,?,?)",
+                [(batch_id, received_at, *r) for r in raw],
+            )
+            _conn.commit() %*\label{lin:sto-commit}*)
         except sqlite3.Error as e:
-            # [...] desfaz e avisa
-            return JSONResponse({"error": "storage unavailable"},
+            # [...]
+            return JSONResponse({"error": "storage unavailable"}, %*\label{lin:sto-503}*)
                                 status_code=503)
-    return {"partialSuccess": {}}   # » ...e só então responde 200
+        # [...]
+
+    # [...]
+    return {"partialSuccess": {}} %*\label{lin:sto-200}*)
 \end{lstlisting}
 \end{programruledcaption}
 
-A chave que reconhece os repetidos é um resumo SHA-256, guardado numa coluna
-única (Programa~\ref{prog:chave}). Um registro com identificador de evento é
+A linha~\ref{lin:sto-split} separa os registros, e as duas seguintes os
+dividem entre os bem formados, que vão para \texttt{log\_record}, e os
+malformados, que vão à parte para \texttt{log\_record\_raw}. O instante de
+recebimento também sai com granularidade de semana
+(linha~\ref{lin:sto-recv}). O lote é gravado numa transação só, que termina na
+linha~\ref{lin:sto-commit}, e o \texttt{INSERT OR IGNORE} da
+linha~\ref{lin:sto-ignore} faz um registro repetido não entrar de novo. Só
+depois do \texttt{commit} o backend responde com sucesso
+(linha~\ref{lin:sto-200}); se o banco falha, a transação é desfeita e a
+resposta é um erro (linha~\ref{lin:sto-503}). A coluna \texttt{dedupe\_key}
+guarda a chave de repetição. Ficam de fora do trecho a descompressão, o
+desfazer em qualquer outro erro e o registro do lote na saída do programa.
+
+Essa chave é um resumo SHA-256, numa coluna única. Um registro com identificador de evento, o caso do kw\_tele, é
 reconhecido pela instalação, pelo corpo e pelo identificador; um registro sem
-ele, pelo tempo e pelos atributos.
-
-\begin{programruledcaption}{A chave de repetição, em \texttt{server/\allowbreak{}sink/\allowbreak{}app.py}
-    \citep{tccrepo}.
-    \label{prog:chave}}
-\begin{lstlisting}[language=python, style=wider]
-def _dedupe_key(instance, body, event_id, time_ns, attrs_json):
-    """D51: an event with an id is keyed by (instance, body, id); otherwise
-    the D42 key."""
-    if event_id is not None:
-        raw = json.dumps([instance, body, event_id])   # » o caso do kw_tele
-    else:
-        raw = json.dumps([instance, body, time_ns, attrs_json])
-    return hashlib.sha256(raw.encode("ascii")).hexdigest()
-\end{lstlisting}
-\end{programruledcaption}
+ele, pela instalação, pelo corpo, pelo tempo e pelos atributos.
 
 A consulta tem dois tetos: devolve até 1000 grupos por resposta, marcando a
 resposta como truncada quando passa disso, e junta até 63 tipos, porque o
 SQLite não aceita mais de 64 tabelas numa junção \citep{sqlite_limits} e uma
 delas é a do tipo pedido. Os nomes de tipo e de atributo que chegam na
-consulta nunca entram no SQL como texto: vão sempre como parâmetros. Um índice
+consulta nunca entram no SQL como texto. Vão sempre como parâmetros. Um índice
 sobre o tipo, a instalação e o identificador do evento sustenta a junção. O
 Programa~\ref{prog:consulta} mostra uma consulta à terceira rota, a da
 Figura~\ref{fig:consulta}, e o começo da resposta.
 
 \begin{programruledcaption}{Uma consulta à rota de agrupamento e o começo da resposta, no
-    formato que \texttt{server/\allowbreak{}sink/\allowbreak{}app.py} devolve \citep{tccrepo}. Valores
+    formato que \texttt{server/\allowbreak{}sink/\allowbreak{}app.py} devolve \citep{tccrepo}, reformatado para leitura. Valores
     ilustrativos; os demais grupos omitidos.
     \label{prog:consulta}}
 \begin{lstlisting}[style=wider]
 $ curl -s --get localhost:8000/analysis/query \
-    --data-urlencode schema=executed \
+    --data-urlencode schema=executed \ %*\label{lin:con-schema}*)
     --data-urlencode by=kw.executed.command_label \
     --data-urlencode measure=kw.executed.elapsed_time_in_secs \
-    --data-urlencode bucket=week
+    --data-urlencode bucket=week %*\label{lin:con-bucket}*)
 
 {"schema": "executed", "join": [], "by": ["kw.executed.command_label"],
  "bucket": ["week"], "measure": "kw.executed.elapsed_time_in_secs",
  "where": [], "from": null, "to": null, "keyed": false,
  "groups": [
-   {"week": "2026-11-09", "kw.executed.command_label": "build",
-    "records": 41, "installs": 12,
+   {"week": "2026-11-09", "kw.executed.command_label": "build", %*\label{lin:con-grupo}*)
+    "records": 41, "installs": 12, %*\label{lin:con-records}*)
     "measured": 41, "non_numeric": 0,
-    "sum": 16482, "mean": 402.0, "min": 95, "max": 1210},
+    "sum": 16482.0, "mean": 402.0, "min": 95.0, "max": 1210.0}, %*\label{lin:con-medida}*)
    ...],
  "truncated": false}
 \end{lstlisting}
 \end{programruledcaption}
+
+A consulta pede os registros do tipo \texttt{executed}, agrupados pelo comando,
+com o tempo de execução como medida e um grupo por semana
+(linhas~\ref{lin:con-schema} a~\ref{lin:con-bucket}). A resposta repete o
+pedido e traz os grupos. Cada grupo diz a semana e o comando
+(linha~\ref{lin:con-grupo}), quantos registros e quantas instalações ele
+reúne (linha~\ref{lin:con-records}) e o resumo da medida
+(linha~\ref{lin:con-medida}). Os valores são ilustrativos, no formato que o
+backend devolve.
 
 Os dois serviços sobem juntos com o Docker Compose, configurado em
 \texttt{server/docker-compose.yml}: o Collector na porta 4318 e o backend na
@@ -685,84 +749,51 @@ ponta do Capítulo~\ref{cap:validacao} usa essa mesma montagem.
 \section{Testes}
 \label{sec:impl-testes}
 
-Cada componente tem a sua suíte de testes, na ferramenta do próprio projeto:
-as do kw usam o \texttt{shunit2}, como o resto do kw, e rodam num contêiner
+Cada componente tem a sua suíte de testes, na ferramenta do próprio projeto.
+As do kw usam o \texttt{shunit2}, como o resto do kw, e rodam numa máquina
 Linux, porque o kw só funciona nesse sistema; as do kw\_tele e do backend usam
 o \texttt{pytest} (Programa~\ref{prog:rodar}). O caminho inteiro, do kw à
 consulta, fica para o Capítulo~\ref{cap:validacao}.
 
-\begin{programruledcaption}{Como rodar as três suítes, a partir da raiz do repositório deste
-    trabalho.
-    a lista de testes
-    do kw abreviada.
+\begin{programruledcaption}{Como rodar as três suítes, a partir de um clone do repositório deste
+    trabalho \citep{tccrepo}.
     \label{prog:rodar}}
 \begin{lstlisting}[language=bash, style=wider]
-# » kw: o executor de testes do próprio kw, numa máquina Linux
-cd kworkflow
-./run_tests.sh test 'lib/telemetry_test|unit/telemetry_test|...'
+git clone --recurse-submodules https://github.com/O-Carneiro/tcc-public %*\label{lin:rod-clone}*)
+cd tcc-public
 
-# » kw_tele: só a biblioteca padrão; o pytest é dependência de teste
-cd client/kw_tele
-python3 -m venv /tmp/kwt && /tmp/kwt/bin/pip install -r requirements-dev.txt
-/tmp/kwt/bin/python -m pytest -q
+( cd kworkflow && ./run_tests.sh test \ %*\label{lin:rod-kw}*)
+    'lib/telemetry_test|unit/telemetry_test|'\
+'unit/telemetry_dispatch_test|unit/setup_kw_tele_test|'\
+'unit/build_modules_test' )
 
-# » backend
-cd server/sink && python3 -m pytest -q
+( cd client/kw_tele && python3 -m venv .venv && %*\label{lin:rod-kwtele}*)
+    .venv/bin/pip install -r requirements-dev.txt &&
+    .venv/bin/python -m pytest -q -m "not slow" )
+
+( cd server/sink && python3 -m venv .venv && %*\label{lin:rod-sink}*)
+    .venv/bin/pip install -r requirements.txt -r requirements-dev.txt &&
+    .venv/bin/python -m pytest -q )
 \end{lstlisting}
 \end{programruledcaption}
 
-No kw, os testes do disparador passam por cada estado de consentimento e
-conferem a ordem do Programa~\ref{prog:gate}: que ele só pergunta com um
-terminal, que escreve a pergunta na saída de erro e nada na saída do comando,
-que dispara o kw\_tele só na hora certa, sem esperar por ele, e que respeita o
-tempo mínimo entre tentativas. Os testes de tempo são uma tabela: cada linha
-dá a idade da última tentativa e do último sucesso, o número de falhas e o que
-o disparador deve fazer (Programa~\ref{prog:teste-kw}). O relógio é fixado
-pelo teste, e não lido da máquina.
+O kw entra no repositório deste trabalho como submódulo, por isso o clone da
+linha~\ref{lin:rod-clone} traz os submódulos, porque sem eles os testes do kw\_tele
+não acham o esquema real do kw. Cada suíte roda no seu diretório. A do kw, na
+linha~\ref{lin:rod-kw}, usa o executor de testes do próprio kw, com os cinco
+arquivos de teste da telemetria, e pede as dependências de teste do kw, entre
+elas o \texttt{shunit2} e o \texttt{sqlite3}. As do kw\_tele e do backend, nas
+linhas~\ref{lin:rod-kwtele} e~\ref{lin:rod-sink}, instalam as suas
+dependências num ambiente isolado do Python. O kw\_tele só precisa do
+\texttt{pytest}, porque o programa usa só a biblioteca padrão. A opção
+\texttt{-m "not slow"} deixa de fora o único teste lento, que espera o prazo
+de 60 segundos do envio.
 
-\begin{programruledcaption}{Um teste do disparador, em
-    \texttt{tests/\allowbreak{}unit/\allowbreak{}lib/\allowbreak{}telemetry\_test.sh} \citep{kwfork_telemetry}.
-    \label{prog:teste-kw}}
-\begin{lstlisting}[language=bash, style=wider]
-function test_gate_spawns_only_when_due()
-{
-  # A last_success_at or last_attempt_at in the future (clock jump, copied
-  # state) must not block spawning. The failure gap doubles from 3600 s per
-  # failure and is capped at 86400 s.
-  # config | outcome | attempt age | success age | failures
-  check_timing_rows "$LINENO" << 'EOF'
-|spawned|never|86400|0           # » um dia sem sucesso: dispara
-|not spawned|never|86399|0       # » um segundo antes: não
-|not spawned|3599|never|0        # » menos de 1 h da última tentativa
-|spawned|3600|never|0
-|not spawned|7199|never|2        # » 2 falhas: o tempo mínimo dobrou
-|spawned|7200|never|2
-|not spawned|86399|never|30      # » muitas falhas: o teto é um dia
-|spawned|86400|never|30
-|spawned|never|-864000|0         # » um sucesso no futuro não trava
-|spawned|-864000|never|0
-EOF
-}
-\end{lstlisting}
-\end{programruledcaption}
-
-Os outros testes do kw conferem que cada resposta da pergunta de
-consentimento grava o que deve e que, sem terminal, nada é gravado; que um
-banco antigo ganha a coluna e o índice sem perder as linhas; que o evento, a
-execução e os módulos são gravados juntos, na compilação e na instalação do
-kernel, com sucesso e falha; e que uma instalação do kw\_tele que falha
-mantém o que já estava instalado. A suíte inteira do kw passa no ramo de
-telemetria como no projeto original, com as mesmas falhas que já existem nele
-e nenhuma nova, e as ferramentas de estilo que o kw usa não acusam nada novo.
-
-No kw\_tele, os testes cobrem o consentimento, a montagem do registro, a
-granularidade de semana de todo tempo que sai, o envio, com a confirmação, a
-divisão de um lote recusado, o prazo e a trava, e os códigos de saída. A
-montagem é testada sobre o arquivo de esquema real do kw: o teste do
-Programa~\ref{prog:teste-kwtele} grava uma compilação com módulos pela
-\textit{view} do Programa~\ref{prog:esquema} e confere que ela vira dois
-registros com o mesmo identificador, sem que o kw\_tele saiba de antemão que a
-tabela existe. Os testes rodam no Python 3.10, a versão mínima.
+Os testes do disparador fixam o relógio, em vez de lê-lo da máquina, e os de
+tempo são uma tabela, em que cada linha dá a idade da última tentativa e do último
+sucesso, o número de falhas e se o disparador deve disparar. A montagem dos
+registros no kw\_tele é testada sobre o arquivo de esquema real do kw
+(Programa~\ref{prog:teste-kwtele}).
 
 \begin{programruledcaption}{Um teste do kw\_tele sobre o esquema real do kw, em
     \texttt{client/\allowbreak{}kw\_tele/\allowbreak{}tests/\allowbreak{}test\_payload.py} \citep{tccrepo}.
@@ -773,60 +804,45 @@ class TestExtensibility(CliCase):
 
     def test_real_build_modules_table_exports(self):
         self.seed(0)
-        # » grava pela view, como o kw grava
         kwdb.sql(
             self.sb.db,
-            "INSERT INTO build_modules_report "
+            "INSERT INTO build_modules_report " %*\label{lin:tst-view}*)
             "(label_name, status, date, time, elapsed_time_in_secs, "
             "module_count, module_names) "
-            "VALUES ('build', 'success', '2026-03-04', '05:06:07', 42, 3, 'a,b,c')",
+            "VALUES ('build', 'success', '2026-03-04', '05:06:07', "
+            "42, 3, 'a,b,c')",
         )
         by_kind = {r["body"]["stringValue"]: attrs(r)
-                   for r in records(self.dry_run())}
-        # » dois registros: um por tabela de extensão...
-        assert set(by_kind) == {"executed", "build_modules"}
-        # » ...com o mesmo identificador de evento
+                   for r in records(self.dry_run())} %*\label{lin:tst-dry}*)
+        assert set(by_kind) == {"executed", "build_modules"} %*\label{lin:tst-dois}*)
         assert (by_kind["build_modules"]["kw.event.id"]
-                == by_kind["executed"]["kw.event.id"])
+                == by_kind["executed"]["kw.event.id"]) %*\label{lin:tst-id}*)
         got = {k: v for k, v in by_kind["build_modules"].items()
                if k.startswith("kw.build_modules")}
-        assert got == {
+        assert got == { %*\label{lin:tst-attrs}*)
             "kw.build_modules.module_count": i(3),
             "kw.build_modules.module_names": s("a,b,c"),
         }
+        assert by_kind["executed"]["kw.executed.command_label"] \ %*\label{lin:tst-nome}*)
+            == s("build")
 \end{lstlisting}
 \end{programruledcaption}
 
-No backend, os testes cobrem a entrada, com os registros malformados guardados
-à parte, os repetidos descartados e a granularidade de semana reaplicada ao
-tempo que chega; as três rotas de consulta, com os filtros, a junção e os
-tetos; e um tipo de registro novo, que aparece na consulta sem mudança no
-backend. O teste do Programa~\ref{prog:teste-backend} envia o mesmo registro
-várias vezes e confere que só uma linha fica, e que o mesmo evento vindo de
-outra instalação, ou com outro corpo, é uma linha nova.
+O teste grava uma compilação com módulos pela \textit{view} do
+Programa~\ref{prog:gatilho}, como o kw grava (linha~\ref{lin:tst-view}), e lê
+o documento que o kw\_tele enviaria, sem enviá-lo (linha~\ref{lin:tst-dry}). A
+compilação tem de virar dois registros, um por tabela
+(linha~\ref{lin:tst-dois}), com o mesmo identificador de evento
+(linha~\ref{lin:tst-id}), e as colunas da tabela de módulos têm de chegar como
+atributos (linha~\ref{lin:tst-attrs}). A última linha confere a troca do
+número do comando pelo nome, do Programa~\ref{prog:reflexao}. Nada no kw\_tele
+sabe de antemão que a tabela de módulos existe, e essa é a extensibilidade da
+Seção~\ref{sec:extensibilidade} verificada sobre o esquema real.
 
-\begin{programruledcaption}{Um teste da entrada do backend próprio, em
-    \texttt{server/\allowbreak{}sink/\allowbreak{}tests/\allowbreak{}test\_logs.py} \citep{tccrepo}.
-    \label{prog:teste-backend}}
-\begin{lstlisting}[language=python, style=wider]
-def test_event_id_and_body_dedupe_across_retries_batches_and_attributes(
-        client, db_path):
-    """D51: the key is install + body + event id; the first row seen is the
-    one kept."""
-    def post(recs, instance="i"):
-        assert post_json(client, payload(recs, instance=instance)).status_code \
-            == 200
+A Tabela~\ref{tab:suites-teste} resume o que cada suíte verifica. A suíte
+inteira do kw passa no ramo de telemetria como no projeto original, com as
+mesmas falhas que já existem nele e nenhuma nova, e as ferramentas de estilo
+que o kw usa não acusam nada novo. Os testes do kw\_tele rodam no Python 3.10,
+a versão mínima.
 
-    a = executed(1)
-    later = executed(1, t="1700000000000000001") | {
-        "attributes": a["attributes"] + [kv("kw.extra", s("x"))]}
-    post([a]); post([a]); post([a, a])  # re-sent, and twice in one batch
-    post([later])  # same id and body, other time and attributes
-    assert count(db_path) == 1       # » quatro envios, uma linha
-    assert fresh_rows(db_path, "SELECT time_unix_nano FROM log_record") == \
-        [(1700000000000000000,)]     # » fica a primeira vista
-    post([a], instance="other")  # the same event from another install is a new row
-    post([executed(1, body="other")])  # same id, different body
-    assert count(db_path) == 3
-\end{lstlisting}
-\end{programruledcaption}
+\input{figuras/tab-suites-teste}

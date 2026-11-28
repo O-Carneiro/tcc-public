@@ -48,7 +48,7 @@ confirmar ou contradizer. Os dois exemplos, porém, vêm de ambientes
 integrados de desenvolvimento, e o fluxo do kernel acontece na linha de
 comando, espalhado por ferramentas que não registram nada.
 
-O kw é exceção: ele já registra o próprio uso (Seção~\ref{sec:funcionalidades}),
+O kw é exceção, porque já registra o próprio uso (Seção~\ref{sec:funcionalidades}),
 e os seus autores já o apresentam como plataforma de pesquisa
 (Seção~\ref{sec:kw-o-que-e}). O artigo do kw vai além e lista o que valeria a
 pena medir: na compilação, o hardware e a estratégia de compilação cruzada;
@@ -107,11 +107,11 @@ problema que é geral.
 
 O objetivo geral deste trabalho é projetar e demonstrar um mecanismo
 extensível de coleta de dados de uso para ferramentas de linha de comando de
-vida curta, sem processo residente: os dados registrados na máquina de quem
+vida curta, sem processo residente. Os dados registrados na máquina de quem
 usa a ferramenta saem dela só com consentimento e chegam, pelo OpenTelemetry,
 a um repositório central onde são armazenados e consultados para pesquisa. O
-kw é o caso em que o mecanismo é aplicado e demonstrado: escrito em Bash, sem
-dependências pesadas e com registros de uso que já existem.
+kw é o caso em que o mecanismo é aplicado e demonstrado, por ser escrito em
+Bash, sem dependências pesadas e com registros de uso que já existem.
 
 Os objetivos específicos são:
 \begin{enumerate}
@@ -142,7 +142,7 @@ pesquisa; o mecanismo serve a qualquer escolha. O trabalho também não aplica o
 mecanismo a outra ferramenta além do kw. Que ele sirva a outras ferramentas de
 linha de comando é argumentado a partir dos precedentes da
 Seção~\ref{sec:precedentes}, não testado. Nenhum dado real de usuários é
-coletado: as perguntas respondidas com dados simulados no
+coletado, e as perguntas respondidas com dados simulados no
 Capítulo~\ref{cap:validacao} mostram o que a consulta alcança, não como o kw é
 usado de fato. O trabalho constrói o que torna essa pesquisa possível, sem
 fazê-la. O cronômetro de foco do kw continua fora, como na

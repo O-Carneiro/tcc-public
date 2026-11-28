@@ -6,8 +6,8 @@
 
 O kw só se entende a partir do trabalho que ele automatiza, por isso este
 capítulo começa pelo desenvolvimento do kernel Linux. Depois apresenta a
-ferramenta e termina no dado que o resto do trabalho usa: o registro que o kw
-faz do próprio uso e a base local onde ele fica.
+ferramenta e termina no dado que o resto do trabalho usa, que é o registro
+que o kw faz do próprio uso e a base local onde ele fica.
 
 \section{O modelo de desenvolvimento do kernel Linux}
 \label{sec:modelo-kernel}
@@ -43,7 +43,7 @@ que os níveis de baixo já fizeram esse trabalho.
 \end{figure}
 
 A contribuição em si chega por e-mail. A unidade de trabalho é o
-\textit{patch}: um arquivo de texto com a diferença entre duas versões do
+\textit{patch}, um arquivo de texto com a diferença entre duas versões do
 código e uma mensagem que explica o que mudou e por quê. Parece um
 \textit{commit} do \textit{git}, mas formatado para ser enviado a uma lista de
 discussão \citep{tadokoro2025sustain}. É na lista que a revisão acontece. Os
@@ -55,7 +55,7 @@ troca fica pública e arquivada no
 qualquer pessoa pode ler a discussão de um \textit{patch} do envio ao aceite
 \citep{lorekernel, tadokoro2023lore}.
 
-O ritmo das versões é quase fixo: cada ciclo abre com uma janela de cerca de
+O ritmo das versões é quase fixo. Cada ciclo abre com uma janela de cerca de
 duas semanas em que os mantenedores enviam a Torvalds o que acumularam, e
 segue só com correções até a versão final \citep{kerneldocprocess}. Os
 subsistemas aceitam \textit{patches} o tempo todo, mas cada um só chega à
@@ -66,13 +66,13 @@ O modelo funciona há mais de trinta anos, mas tem custos. Entre as versões
 forma constante, enquanto o volume de \textit{commits} por ciclo oscilou sem
 tendência de alta \citep{tadokoro2025sustain}. Número de \textit{commits} não
 mede esforço, advertem os autores, mas o dado sugere que mais mantenedores não
-se traduziram em mais vazão. Parte das contribuições nem chega a ser revisada:
-no estudo de \citet{rigby2014peer} sobre as listas do kernel entre 2005 e
+se traduziram em mais vazão. Parte das contribuições nem chega a ser revisada.
+No estudo de \citet{rigby2014peer} sobre as listas do kernel entre 2005 e
 2008, 44\% dos \textit{patches} enviados não receberam discussão de revisão. O
 problema não diminuiu com o tempo. Ao comentar a chegada recorde de novos
 desenvolvedores na versão 7.3, \citet{corbet2026stats73} escreve que os
 mantenedores já estão perdendo a capacidade de acompanhar o fluxo. A conclusão
-de \citet{corbet2017lfreport} continua valendo: sem as ferramentas certas, um
+de \citet{corbet2017lfreport} continua valendo. Sem as ferramentas certas, um
 projeto do tamanho do kernel não conseguiria funcionar sem desabar sob o
 próprio peso.
 
@@ -91,7 +91,7 @@ Uma parte desse custo cai sobre o desenvolvedor antes mesmo de o
 compilar o kernel, instalá-lo numa máquina de teste, verificar se a máquina
 inicializa e se os testes passam, e só então preparar e enviar o
 \textit{patch}. Cada falha o leva de volta à implementação. Nenhuma dessas
-etapas é trivial no kernel: uma compilação completa pode levar de minutos a
+etapas é trivial no kernel, porque uma compilação completa pode levar de minutos a
 horas, e a máquina de teste pode ser virtual, remota ou o próprio computador
 do desenvolvedor \citep{tadokoro2025kw}. Para cada etapa existe uma
 ferramenta: o \texttt{make}, os \textit{scripts} \texttt{checkpatch.pl} e
@@ -106,13 +106,13 @@ reunir esse trabalho num lugar só.
 
 O kworkflow (kw) é uma ferramenta de software livre, distribuída sob a GPL
 versão~2 e escrita em Bash, que reúne numa só interface de linha de comando as
-tarefas descritas na seção anterior. O projeto resume o propósito numa frase:
+tarefas descritas na seção anterior. O projeto resume o propósito em
 reduzir o custo de preparação do ambiente para quem trabalha com o kernel
-Linux e oferecer ferramentas para as tarefas do dia a dia
+Linux e em oferecer ferramentas para as tarefas do dia a dia
 \citep{kworkflowrepo}. \citet{tadokoro2025kw} o classificam como um
 \textit{Developer Automation Workflow System} (DAWS), termo que
 \citet{tadokoro2023lore} propôs com a comunidade do projeto por analogia a
-\textit{Version Control System}: assim como um sistema de controle de versão
+\textit{Version Control System}. Assim como um sistema de controle de versão
 cuida do histórico do código, um DAWS cuida do fluxo de trabalho em volta
 dele.
 
@@ -142,7 +142,7 @@ no banco de dados. O código que depende de uma distribuição, de uma
 arquitetura ou de um subsistema específico, e que por isso muda com
 frequência, fica isolado em \textit{plugins} \citep{tadokoro2025kw,
 neto2022kw}. A mesma ideia de \textit{hub} vale para a relação com outras
-ferramentas: o kw prefere incorporar o que a comunidade já usa, como o
+ferramentas. O kw prefere incorporar o que a comunidade já usa, como o
 \texttt{git}, o \texttt{checkpatch.pl} e o QEMU, e só escreve uma solução
 própria quando nada resolve o problema \citep{tadokoro2025kw}. Isso evita mais
 uma camada de \textit{scripts} duplicados, que é justamente o problema
@@ -161,7 +161,7 @@ descrito na Seção~\ref{sec:modelo-kernel}.
 O projeto começou em maio de 2017, como um conjunto de \textit{scripts} para
 compilar e instalar o kernel, e com o tempo se tornou uma ferramenta que cobre
 o fluxo inteiro \citep{kworkflowrepo, neto2022kw}. O desenvolvimento acontece
-no GitHub: as contribuições entram por \textit{pull request} na
+no GitHub. As contribuições entram por \textit{pull request} na
 \textit{branch} \texttt{unstable}, e a \textit{branch} \texttt{master} recebe
 as versões estáveis \citep{neto2022kw}. Rodrigo Siqueira e Matheus Tavares
 são os autores principais \citep{tadokoro2025kw}, e boa parte da evolução
@@ -176,7 +176,7 @@ linha. Propõe uma forma de levar para fora da máquina do desenvolvedor os dado
 que o kw já guarda.
 
 Esses dados não são acidentais. Os autores do kw apresentam a ferramenta
-também como plataforma de pesquisa: segundo \citet{tadokoro2025kw}, a
+também como plataforma de pesquisa. Segundo \citet{tadokoro2025kw}, a
 infraestrutura de coleta de dados que o kw já tem o torna um bom ponto de
 partida para estudar empiricamente o modelo de desenvolvimento do kernel. As
 duas seções seguintes descrevem o que, onde e como o kw registra o uso hoje.
@@ -214,7 +214,7 @@ function statistics_manager()
   local status=${4:-'success'}
   ...
 \end{lstlisting}
-  \caption{Registro de uma compilação: as chamadas em \texttt{src/build.sh}
+  \caption{Registro de uma compilação, com as chamadas em \texttt{src/build.sh}
     e o início da função \texttt{statistics\_manager}, em
     \texttt{src/lib/kwlib.sh} \citep{kworkflowrepo}.}
   \label{prog:registro}
@@ -225,7 +225,7 @@ agrega as execuções por dia, semana, mês ou ano e mostra, para cada
 operação, quantas vezes ela rodou e o maior, o menor e o tempo médio de
 execução (Programa~\ref{prog:report}). A coluna \enquote{Total} é o número de
 execuções. O relatório não separa sucessos de
-falhas: o estado fica guardado, mas uma compilação que falhou entra na mesma
+falhas. O estado fica guardado, mas uma compilação que falhou entra na mesma
 contagem de uma que deu certo. O mesmo comando resume ainda as sessões do
 cronômetro de foco do kw, que ficam fora do escopo deste trabalho. O
 \texttt{kw report} roda na máquina de quem gerou os dados e mostra o
@@ -280,7 +280,7 @@ duração) são tudo o que se sabe de cada execução.
   \label{fig:esquema-kw}
 \end{figure}
 
-O design serve bem ao que foi feito para servir: o esquema é normalizado,
+O design serve bem ao que foi feito para servir. O esquema é normalizado,
 fácil de consultar e tem um único ponto de escrita. Três propriedades dele,
 no entanto, só fazem diferença quando os dados precisam sair da máquina, e as
 três voltam no Capítulo~\ref{cap:solucao}.
@@ -291,7 +291,7 @@ lido; como a coluna não é declarada com \texttt{AUTOINCREMENT}, o SQLite pode
 reaproveitar o identificador de um evento apagado, embora nenhum código do kw
 apague eventos hoje. A segunda é que data e hora são guardadas como texto, em
 colunas separadas, no horário local e sem fuso. A terceira é que o esquema não
-tem número de versão: todas as tabelas são criadas com \texttt{CREATE TABLE IF
+tem número de versão. Todas as tabelas são criadas com \texttt{CREATE TABLE IF
 NOT EXISTS}, e o campo \texttt{user\_version} do SQLite fica em zero
 \citep{kworkflowrepo}. Quando o esquema foi desenhado, em 2021, os dados
 nunca deixavam a máquina de quem os gerou, e as três escolhas eram as
